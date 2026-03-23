@@ -1,0 +1,126 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { db } from '../firebase';
+import { 
+  collection, 
+  onSnapshot, 
+  setDoc, 
+  doc, 
+  updateDoc, 
+  deleteDoc, 
+  addDoc,
+  query,
+  where
+} from 'firebase/firestore';
+
+const AppContext = createContext();
+
+export const useAppContext = () => useContext(AppContext);
+
+export const AppProvider = ({ children }) => {
+  const [students, setStudents] = useState([]);
+  const [classes, setClasses] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // 1. Sincronizar Alumnos en tiempo real
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'students'), (snapshot) => {
+      const studentData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setStudents(studentData);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Sincronizar Clases en tiempo real
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'classes'), (snapshot) => {
+      const classData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Solo inicializar si realmente no hay nada
+      if (classData.length === 0) {
+        const initialClasses = [
+          { name: 'Martes 19:30', day: 'Martes', time: '19:30', endTime: '21:00', profitSplit: 1, rent: 1000, classPrice: 800, monthlyPrice: 3000, monthly2xsPrice: 4500 },
+          { name: 'Martes 21:00', day: 'Martes', time: '21:00', endTime: '22:30', profitSplit: 1, rent: 1000, classPrice: 800, monthlyPrice: 3000, monthly2xsPrice: 4500 },
+          { name: 'Jueves 19:30', day: 'Jueves', time: '19:30', endTime: '21:00', profitSplit: 0.5, rent: 1000, classPrice: 800, monthlyPrice: 3000, monthly2xsPrice: 4500 }
+        ];
+        initialClasses.forEach(async (c) => {
+          await addDoc(collection(db, 'classes'), c);
+        });
+      } else {
+        setClasses(classData);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 3. Sincronizar Asistencias (Últimos 3 meses para no saturar memoria)
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'attendance_records'), (snapshot) => {
+      const recordData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setRecords(recordData);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const addStudent = async (student) => {
+    await addDoc(collection(db, 'students'), {
+      ...student,
+      enrolledClasses: student.enrolledClasses || [],
+      createdAt: new Date().toISOString()
+    });
+  };
+
+  const updateStudent = async (id, updated) => {
+    await updateDoc(doc(db, 'students', id), updated);
+  };
+
+  const deleteStudent = async (id) => {
+    await deleteDoc(doc(db, 'students', id));
+  };
+
+  const addClass = async (cls) => {
+    await addDoc(collection(db, 'classes'), {
+      ...cls,
+      classPrice: cls.classPrice || 0,
+      monthlyPrice: cls.monthlyPrice || 0,
+      monthly2xsPrice: cls.monthly2xsPrice || 0
+    });
+  };
+
+  const updateClass = async (id, updated) => {
+    await updateDoc(doc(db, 'classes', id), updated);
+  };
+
+  const deleteClass = async (id) => {
+    await deleteDoc(doc(db, 'classes', id));
+  };
+
+  const saveAttendanceAndPayment = async (date, classId, studentRecords) => {
+    // Guardamos cada registro individualmente en Firestore
+    // Usamos un ID compuesto para evitar duplicados en el mismo dia/clase/alumno
+    const batchPromises = Object.entries(studentRecords).map(async ([studentId, data]) => {
+      const recordId = `${date}_${classId}_${studentId}`;
+      await setDoc(doc(db, 'attendance_records', recordId), {
+        date,
+        classId,
+        studentId,
+        ...data,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    });
+
+    await Promise.all(batchPromises);
+  };
+
+  return (
+    <AppContext.Provider value={{
+      students, addStudent, updateStudent, deleteStudent,
+      classes, addClass, updateClass, deleteClass,
+      records, saveAttendanceAndPayment,
+      loading
+    }}>
+      {children}
+    </AppContext.Provider>
+  );
+};
