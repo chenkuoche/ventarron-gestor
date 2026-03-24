@@ -5,6 +5,7 @@ import { Search, Calendar, Wallet, CreditCard, Mail, CheckCircle, Clock } from '
 const Payments = () => {
     const { records, students, classes } = useAppContext();
     const [monthFilter, setMonthFilter] = useState(''); // Empty means last 2 months
+    const [searchTerm, setSearchTerm] = useState('');
 
     // Gereramos lista de meses disponibles para el filtro
     const availableMonths = [...new Set(records.map(r => r.date.substring(0, 7)))].sort((a, b) => b.localeCompare(a));
@@ -19,29 +20,48 @@ const Payments = () => {
             const amount = Number(r.paymentAmount);
             if (amount <= 0) return false;
             
+            // Filtro por Mes
+            let matchesMonth = false;
             if (monthFilter) {
-                return r.date.startsWith(monthFilter);
+                matchesMonth = r.date.startsWith(monthFilter);
             } else {
-                // Default: current and last month
-                return r.date.startsWith(currentMonth) || r.date.startsWith(lastMonth);
+                matchesMonth = r.date.startsWith(currentMonth) || r.date.startsWith(lastMonth);
             }
+            if (!matchesMonth) return false;
+
+            // Filtro por Alumno
+            if (searchTerm) {
+                const student = students.find(s => s.id === r.studentId);
+                return student?.name.toLowerCase().includes(searchTerm.toLowerCase());
+            }
+
+            return true;
         })
         .sort((a, b) => b.date.localeCompare(a.date));
-
-    const totalIncome = filteredRecords.reduce((acc, r) => acc + Number(r.paymentAmount), 0);
 
     return (
         <div className="payments-page">
             <div className="flex justify-between align-center" style={{ marginBottom: '20px', flexWrap: 'wrap', gap: '20px' }}>
-                <div className="card" style={{ padding: '15px 25px', marginBottom: 0, flex: '1 1 200px' }}>
-                    <p style={{ margin: 0, fontSize: '12px', opacity: 0.5, textTransform: 'uppercase' }}>Ingresos Vista Actual</p>
-                    <h2 style={{ margin: '5px 0', color: '#2ecc71', fontSize: '2rem' }}>${totalIncome.toLocaleString()}</h2>
+                {/* BUSCADOR DE ALUMNO */}
+                <div className="card" style={{ padding: '20px', marginBottom: 0, flex: '1 1 300px', display: 'flex', gap: '15px', alignItems: 'center' }}>
+                    <Search size={20} opacity={0.5} />
+                    <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '11px', marginBottom: '5px' }}>Buscar por Alumno</label>
+                        <input 
+                            type="text"
+                            placeholder="Ej: Juan Pérez..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{ marginBottom: 0, background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '5px 0' }}
+                        />
+                    </div>
                 </div>
 
+                {/* FILTRO DE MES */}
                 <div className="card" style={{ padding: '20px', marginBottom: 0, flex: '1 1 300px', display: 'flex', gap: '15px', alignItems: 'center' }}>
                     <Calendar size={20} opacity={0.5} />
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '11px', marginBottom: '5px' }}>Filtrar por Mes</label>
+                        <label style={{ fontSize: '11px', marginBottom: '5px' }}>Ver Período</label>
                         <select 
                             value={monthFilter} 
                             onChange={(e) => setMonthFilter(e.target.value)}
@@ -116,7 +136,7 @@ const Payments = () => {
                             {filteredRecords.length === 0 && (
                                 <tr>
                                     <td colSpan="7" style={{ textAlign: 'center', padding: '50px', opacity: 0.5 }}>
-                                        No se registran pagos en este período.
+                                        {searchTerm ? `No hay registros de pago para "${searchTerm}".` : 'No se registran pagos en este período.'}
                                     </td>
                                 </tr>
                             )}
