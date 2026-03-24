@@ -6,6 +6,7 @@ import {
   signOut 
 } from "firebase/auth";
 import { initializeFirestore, persistentLocalCache } from "firebase/firestore";
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const firebaseConfig = {
     apiKey: "AIzaSyB3HfruwaC2cCBp6Eo4FBtWmaEmjqpUCgE",
@@ -18,6 +19,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+export const functions = getFunctions(app);
+export { httpsCallable };
 
 // Forzamos el uso de Long Polling para evitar errores de red (Fetch API / CORS)
 export const db = initializeFirestore(app, {

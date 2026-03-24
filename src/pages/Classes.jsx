@@ -38,16 +38,19 @@ const Classes = () => {
         setFormData({ name: '', day: 'Martes', time: '19:00', endTime: '20:30', profitSplit: 1, rent: 0, classPrice: 800, monthlyPrice: 3000, monthly2xsPrice: 4500 });
     };
 
+    const rowStyle = { display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '10px' };
+    const fieldStyle = { flex: '1 1 140px', minWidth: '140px' };
+
     return (
         <div className="classes-page">
-            <div className="flex-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr', gap: '30px' }}>
+            <div className="flex-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '30px' }}>
                 {/* Form to Add/Edit */}
                 <div className="card" style={{
                     height: 'fit-content',
                     border: isEditing ? '2px solid #3498db' : '1px solid rgba(255,255,255,0.05)'
                 }}>
                     <div className="flex justify-between align-center">
-                        <h3 style={{ color: isEditing ? '#3498db' : 'inherit' }}>
+                        <h3 style={{ color: isEditing ? '#3498db' : 'inherit', margin: 0 }}>
                             {isEditing ? 'Editando Clase' : 'Crear Nueva Clase'}
                         </h3>
                         {isEditing && (
@@ -67,8 +70,8 @@ const Classes = () => {
                             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         />
 
-                        <div className="flex gap-10">
-                            <div style={{ flex: 1 }}>
+                        <div style={rowStyle}>
+                            <div style={fieldStyle}>
                                 <label>Día</label>
                                 <select
                                     value={formData.day}
@@ -79,7 +82,7 @@ const Classes = () => {
                                     ))}
                                 </select>
                             </div>
-                            <div style={{ flex: 1 }}>
+                            <div style={fieldStyle}>
                                 <label>Hora Inicio</label>
                                 <input
                                     type="time"
@@ -89,8 +92,8 @@ const Classes = () => {
                             </div>
                         </div>
 
-                        <div className="flex gap-10">
-                            <div style={{ flex: 1 }}>
+                        <div style={rowStyle}>
+                            <div style={fieldStyle}>
                                 <label>Hora Fin</label>
                                 <input
                                     type="time"
@@ -98,8 +101,8 @@ const Classes = () => {
                                     onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
                                 />
                             </div>
-                            <div style={{ flex: 1 }}>
-                                <label>Alquiler por clase ($)</label>
+                            <div style={fieldStyle}>
+                                <label>Alquiler / clase ($)</label>
                                 <input
                                     type="number"
                                     value={formData.rent}
@@ -108,8 +111,22 @@ const Classes = () => {
                             </div>
                         </div>
 
-                        <div className="flex gap-10">
-                            <div style={{ flex: 1 }}>
+                        <div style={rowStyle}>
+                            <div style={{ flex: '1 1 100%' }}>
+                                <label>Ganancia (Usuario)</label>
+                                <select
+                                    value={formData.profitSplit}
+                                    onChange={(e) => setFormData({ ...formData, profitSplit: parseFloat(e.target.value) })}
+                                >
+                                    <option value={1}>100% (Ganancia total)</option>
+                                    <option value={0.5}>50% (Con un colega)</option>
+                                    <option value={0.33}>33.3% (Tres profesores)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style={rowStyle}>
+                            <div style={fieldStyle}>
                                 <label>Precio Clase Suelta ($)</label>
                                 <input
                                     type="number"
@@ -119,17 +136,17 @@ const Classes = () => {
                             </div>
                         </div>
 
-                        <div className="flex gap-10">
-                            <div style={{ flex: 1 }}>
-                                <label>Mensual 1 x Sem (1XS) ($)</label>
+                        <div style={rowStyle}>
+                            <div style={fieldStyle}>
+                                <label>Mensual 1 x Sem ($)</label>
                                 <input
                                     type="number"
                                     value={formData.monthlyPrice}
                                     onChange={(e) => setFormData({ ...formData, monthlyPrice: parseFloat(e.target.value) || 0 })}
                                 />
                             </div>
-                            <div style={{ flex: 1 }}>
-                                <label>Mensual 2 x Sem (2XS) ($)</label>
+                            <div style={fieldStyle}>
+                                <label>Mensual 2 x Sem ($)</label>
                                 <input
                                     type="number"
                                     value={formData.monthly2xsPrice}
@@ -138,18 +155,8 @@ const Classes = () => {
                             </div>
                         </div>
 
-                        <label>Ganancia (Usuario)</label>
-                        <select
-                            value={formData.profitSplit}
-                            onChange={(e) => setFormData({ ...formData, profitSplit: parseFloat(e.target.value) })}
-                        >
-                            <option value={1}>100% (Ganancia total)</option>
-                            <option value={0.5}>50% (Con un colega)</option>
-                            <option value={0.33}>33.3% (Tres profesores)</option>
-                        </select>
-
                         <div className="flex gap-10" style={{ marginTop: '10px' }}>
-                            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                            <button type="submit" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
                                 <Plus size={18} />
                                 {isEditing ? 'Guardar Cambios' : 'Crear Clase'}
                             </button>
@@ -163,13 +170,13 @@ const Classes = () => {
                         <h3>Tus Horarios</h3>
                     </div>
 
-                    <div className="table-wrapper">
-                        <table>
+                    <div className="table-wrapper" style={{ overflowX: 'auto' }}>
+                        <table style={{ minWidth: '400px' }}>
                             <thead>
                                 <tr>
                                     <th>Nombre</th>
                                     <th>Precios</th>
-                                    <th>Acciones</th>
+                                    <th style={{ textAlign: 'center' }}>Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -184,7 +191,7 @@ const Classes = () => {
                                             </div>
                                         </td>
                                         <td>
-                                            <div className="flex gap-10">
+                                            <div className="flex gap-10 justify-center">
                                                 <button
                                                     onClick={() => handleEdit(cls)}
                                                     style={{ background: 'none', border: 'none', color: '#3498db', cursor: 'pointer' }}

@@ -30,8 +30,7 @@ const iconMap = {
 };
 
 const MainLayout = ({ user }) => {
-  const { hasUnsavedChanges, setHasUnsavedChanges } = useAppContext();
-  const [activePage, setActivePage] = useState('Asistencia y Pagos');
+  const { hasUnsavedChanges, setHasUnsavedChanges, activePage, setActivePage } = useAppContext();
   const [isSidebarOpen, setSidebarOpen] = useState(true);
 
   // Evitar cerrar pestaña o navegador si hay cambios sin guardar
@@ -83,9 +82,8 @@ const MainLayout = ({ user }) => {
 
       {/* Sidebar */}
       <nav className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-header" style={{ padding: '30px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 'bold' }}>Ventarrón</h2>
-          <span style={{ fontSize: '0.8rem', opacity: 0.6, letterSpacing: '1px' }}>Escuela de Tango</span>
+        <div className="sidebar-header" style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
+          <img src="/logo.png" alt="Ventarrón" style={{ maxWidth: '100%', maxHeight: '70px', height: 'auto' }} />
         </div>
 
         <div className="sidebar-nav" style={{ flex: 1, padding: '20px 10px' }}>
@@ -148,9 +146,7 @@ const MainLayout = ({ user }) => {
             </button>
             <h3 style={{ margin: 0 }}>{activePage}</h3>
           </div>
-          <div className="flex align-center gap-10">
-            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.2.0</span>
-          </div>
+            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.4.4</span>
         </header>
 
         <div className="container" style={{ padding: '30px 40px' }}>
@@ -200,8 +196,9 @@ function App() {
     return (
       <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a202c', color: 'white', padding: '20px' }}>
         <div style={{ backgroundColor: '#2d3748', padding: '40px', borderRadius: '12px', textAlign: 'center', maxWidth: '400px', width: '100%', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-          <h2 style={{ marginBottom: '10px' }}>Gestor de Asistencias de Ventarrón</h2>
-          <p style={{ opacity: 0.7, marginBottom: '30px', fontSize: '14px' }}>Acceso exclusivo para administración de la escuela.</p>
+          <img src="/logo.png" alt="Ventarrón Logo" style={{ width: '250px', maxWidth: '100%', marginBottom: '20px' }} />
+          <h2 style={{ marginBottom: '10px', fontSize: '1.2rem' }}>Gestor de Asistencias</h2>
+          <p style={{ opacity: 0.6, marginBottom: '30px', fontSize: '14px' }}>Acceso exclusivo para administración.</p>
           
           {errorVisible && (
             <div style={{ backgroundColor: '#fed7d7', color: '#822727', padding: '10px', borderRadius: '6px', marginBottom: '20px', fontSize: '13px' }}>

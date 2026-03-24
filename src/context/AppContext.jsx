@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { db } from '../firebase';
+import { db, functions, httpsCallable } from '../firebase';
 import { 
   collection, 
   onSnapshot, 
@@ -24,6 +24,8 @@ export const AppProvider = ({ children }) => {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [activePage, setActivePage] = useState('Asistencia y Pagos');
+  const [selectedClassId, setSelectedClassId] = useState('');
 
   // 1. Sincronizar Alumnos en tiempo real
   useEffect(() => {
@@ -70,6 +72,7 @@ export const AppProvider = ({ children }) => {
     await addDoc(collection(db, 'students'), {
       ...student,
       enrolledClasses: student.enrolledClasses || [],
+      guestClasses: student.guestClasses || [],
       createdAt: new Date().toISOString()
     });
   };
@@ -99,9 +102,8 @@ export const AppProvider = ({ children }) => {
     await deleteDoc(doc(db, 'classes', id));
   };
 
-  const saveAttendanceAndPayment = async (date, classId, studentRecords) => {
-    // Guardamos cada registro individualmente en Firestore
-    // Usamos un ID compuesto para evitar duplicados en el mismo dia/clase/alumno
+  const saveAttendanceAndPayment = async (date, classId, studentRecords, idsToDelete = []) => {
+    // 1. Guardar/Actualizar registros
     const batchPromises = Object.entries(studentRecords).map(async ([studentId, data]) => {
       const recordId = `${date}_${classId}_${studentId}`;
       await setDoc(doc(db, 'attendance_records', recordId), {
@@ -113,7 +115,13 @@ export const AppProvider = ({ children }) => {
       }, { merge: true });
     });
 
-    await Promise.all(batchPromises);
+    // 2. Eliminar registros que el usuario quitó explícitamente
+    const deletePromises = idsToDelete.map(async (studentId) => {
+      const recordId = `${date}_${classId}_${studentId}`;
+      await deleteDoc(doc(db, 'attendance_records', recordId));
+    });
+
+    await Promise.all([...batchPromises, ...deletePromises]);
   };
 
   const clearAllRecords = async () => {
@@ -131,7 +139,26 @@ export const AppProvider = ({ children }) => {
       classes, addClass, updateClass, deleteClass,
       records, saveAttendanceAndPayment, clearAllRecords,
       hasUnsavedChanges, setHasUnsavedChanges,
-      loading
+      activePage, setActivePage,
+      selectedClassId, setSelectedClassId,
+      loading,
+      sendEmail: async (data) => {
+        const mailer = httpsCallable(functions, 'sendEmail');
+        return await mailer(data);
+      },
+      markReceiptSent: async (date, classId, studentId) => {
+        const q = query(
+          collection(db, 'attendance_records'),
+          where('date', '==', date),
+          where('classId', '==', classId),
+          where('studentId', '==', studentId)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const docRef = snap.docs[0].ref;
+          await updateDoc(docRef, { receiptSent: true });
+        }
+      }
     }}>
       {children}
     </AppContext.Provider>
