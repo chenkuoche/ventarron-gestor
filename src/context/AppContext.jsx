@@ -9,7 +9,9 @@ import {
   deleteDoc, 
   addDoc,
   query,
-  where
+  where,
+  getDocs,
+  writeBatch
 } from 'firebase/firestore';
 
 const AppContext = createContext();
@@ -21,6 +23,7 @@ export const AppProvider = ({ children }) => {
   const [classes, setClasses] = useState([]);
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // 1. Sincronizar Alumnos en tiempo real
   useEffect(() => {
@@ -113,11 +116,21 @@ export const AppProvider = ({ children }) => {
     await Promise.all(batchPromises);
   };
 
+  const clearAllRecords = async () => {
+    const batch = writeBatch(db);
+    const snapshot = await getDocs(collection(db, 'attendance_records'));
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+  };
+
   return (
     <AppContext.Provider value={{
       students, addStudent, updateStudent, deleteStudent,
       classes, addClass, updateClass, deleteClass,
-      records, saveAttendanceAndPayment,
+      records, saveAttendanceAndPayment, clearAllRecords,
+      hasUnsavedChanges, setHasUnsavedChanges,
       loading
     }}>
       {children}

@@ -13,19 +13,21 @@ import {
 } from 'lucide-react';
 
 const Attendance = () => {
-    const { students, classes, records, saveAttendanceAndPayment, updateStudent } = useAppContext();
+    const { students, classes, records, saveAttendanceAndPayment, updateStudent, hasUnsavedChanges, setHasUnsavedChanges } = useAppContext();
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedClassId, setSelectedClassId] = useState('');
     const [studentRecords, setStudentRecords] = useState({});
     const [searchExtra, setSearchExtra] = useState('');
     const [extraData, setExtraData] = useState({}); // { studentId: 'recovery' | 'guest' }
-    const loadedRef = React.useRef({ classId: '', date: '' });
+    const [isSaving, setIsSaving] = useState(false);
+    const [feedbackMsg, setFeedbackMsg] = useState('');
+    const [showExitConfirm, setShowExitConfirm] = useState(false);
+    const lastRemoteSync = React.useRef(null);
+    const initialLoadDone = React.useRef(false);
 
+    // 1. CARGAR de la base de datos (Solo al entrar a la clase)
     useEffect(() => {
-        if (selectedClassId && selectedDate) {
-            if (loadedRef.current.classId === selectedClassId && loadedRef.current.date === selectedDate) {
-                return;
-            }
+        if (selectedClassId && selectedDate && !initialLoadDone.current) {
             const existing = records.filter(r => r.date === selectedDate && r.classId === selectedClassId);
             const initial = {};
             const existingExtra = {};
@@ -49,16 +51,25 @@ const Attendance = () => {
                     };
                 }
             });
+
             setStudentRecords(initial);
             setExtraData(existingExtra);
-            loadedRef.current = { classId: selectedClassId, date: selectedDate };
+            initialLoadDone.current = true;
         }
     }, [selectedClassId, selectedDate, records, students]);
 
+    // Resetear el flag de carga al salir de la clase o cambiar de fecha
     useEffect(() => {
-        if (!selectedClassId || Object.keys(studentRecords).length === 0) return;
-        if (loadedRef.current.classId !== selectedClassId || loadedRef.current.date !== selectedDate) return;
+        initialLoadDone.current = false;
+    }, [selectedClassId, selectedDate]);
 
+    // 2. FUNCIÓN DE GUARDADO MANUAL
+    const handleSave = async () => {
+        if (!selectedClassId || isSaving) return;
+        
+        setIsSaving(true);
+        setFeedbackMsg('Enviando...');
+        
         const finalRecords = {};
         Object.keys(studentRecords).forEach(id => {
             finalRecords[id] = {
@@ -66,10 +77,47 @@ const Attendance = () => {
                 isGuest: extraData[id] === 'guest'
             };
         });
-        saveAttendanceAndPayment(selectedDate, selectedClassId, finalRecords);
-    }, [studentRecords, extraData, selectedClassId, selectedDate, saveAttendanceAndPayment]);
+
+        try {
+            // Guardado optimista: marcamos como guardado casi de inmediato para no trabar el UI
+            saveAttendanceAndPayment(selectedDate, selectedClassId, finalRecords);
+            
+            // Damos un pequeño margen para que se vea el "Enviando"
+            setTimeout(() => {
+                setHasUnsavedChanges(false);
+                setIsSaving(false);
+                setFeedbackMsg('¡GUARDADO! ✅');
+                // Quitamos el mensaje de éxito después de 3 segundos
+                setTimeout(() => setFeedbackMsg(''), 3000);
+            }, 800);
+            
+        } catch (error) {
+            console.error(error);
+            setFeedbackMsg('❌ Error al guardar');
+            setIsSaving(false);
+            setTimeout(() => setFeedbackMsg(''), 5000);
+        }
+    };
+
+    const handleExit = () => {
+        if (hasUnsavedChanges) {
+            setShowExitConfirm(true);
+        } else {
+            setSelectedClassId('');
+        }
+    };
+
+    const confirmExit = (shouldSave) => {
+        if (shouldSave) {
+            handleSave();
+        }
+        setHasUnsavedChanges(false);
+        setShowExitConfirm(false);
+        setSelectedClassId('');
+    };
 
     const togglePresence = (studentId) => {
+        setHasUnsavedChanges(true);
         setStudentRecords(prev => ({
             ...prev,
             [studentId]: {
@@ -80,6 +128,7 @@ const Attendance = () => {
     };
 
     const handleValueChange = (studentId, field, value) => {
+        setHasUnsavedChanges(true);
         setStudentRecords(prev => {
             const current = prev[studentId];
             const updates = { [field]: value };
@@ -101,9 +150,8 @@ const Attendance = () => {
         });
     };
 
-    // Manual save removed in favor of auto-save
-
     const addExtraStudent = (student, type) => {
+        setHasUnsavedChanges(true);
         setStudentRecords(prev => ({
             ...prev,
             [student.id]: { present: true, paymentAmount: 0, paymentMethod: '' }
@@ -113,6 +161,7 @@ const Attendance = () => {
     };
 
     const enrollStudent = (student) => {
+        setHasUnsavedChanges(true);
         const newEnrolled = [...(student.enrolledClasses || []), selectedClassId];
         updateStudent(student.id, { enrolledClasses: newEnrolled });
         setStudentRecords(prev => ({
@@ -123,6 +172,7 @@ const Attendance = () => {
     };
 
     const removeExtra = (id) => {
+        setHasUnsavedChanges(true);
         const newStudentRecords = { ...studentRecords };
         delete newStudentRecords[id];
         setStudentRecords(newStudentRecords);
@@ -193,7 +243,7 @@ const Attendance = () => {
         <div className="attendance-form">
             <header className="card flex justify-between align-center" style={{ marginBottom: '20px', padding: '15px 20px', position: 'sticky', top: '70px', zIndex: 10, backgroundColor: 'rgba(52, 73, 94, 0.95)', backdropFilter: 'blur(10px)' }}>
                 <div className="flex align-center gap-15">
-                    <button className="btn btn-secondary" style={{ padding: '8px' }} onClick={() => setSelectedClassId('')}>
+                    <button className="btn btn-secondary" style={{ padding: '8px' }} onClick={handleExit}>
                         <ArrowLeft size={18} />
                     </button>
                     <div>
@@ -206,10 +256,43 @@ const Attendance = () => {
                         />
                     </div>
                 </div>
-                <div style={{ fontSize: '11px', color: '#2ecc71', display: 'flex', alignItems: 'center', gap: '5px', padding: '10px' }}>
-                    <Save size={14} /> Guardado automático
+                <div className="flex align-center gap-15">
+                    {feedbackMsg && (
+                        <div style={{ fontSize: '11px', color: feedbackMsg.includes('Error') ? '#e74c3c' : '#2ecc71', fontWeight: 'bold' }}>
+                            {feedbackMsg}
+                        </div>
+                    )}
+                    {hasUnsavedChanges && !isSaving && (
+                        <button 
+                            className="btn" 
+                            onClick={handleSave}
+                            style={{ backgroundColor: '#e74c3c', color: 'white', border: 'none', padding: '10px 20px', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 15px rgba(231, 76, 60, 0.4)' }}
+                        >
+                            <Save size={18} /> GUARDAR
+                        </button>
+                    )}
+                    {!hasUnsavedChanges && !feedbackMsg && (
+                        <div style={{ fontSize: '11px', color: '#2ecc71', display: 'flex', alignItems: 'center', gap: '5px', opacity: 0.6 }}>
+                            <CircleCheck size={14} /> Todo guardado
+                        </div>
+                    )}
                 </div>
             </header>
+
+            {/* Modal de confirmación personalizado para evitar alerts de JS */}
+            {showExitConfirm && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                    <div className="card" style={{ maxWidth: '400px', width: '100%', padding: '30px', textAlign: 'center' }}>
+                        <h3 style={{ marginBottom: '15px' }}>¿Deseas guardar los cambios?</h3>
+                        <p style={{ opacity: 0.7, marginBottom: '25px', fontSize: '14px' }}>Tienes cambios sin guardar en esta asistencia.</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <button className="btn" onClick={() => confirmExit(true)} style={{ backgroundColor: '#2ecc71', color: 'white', border: 'none', padding: '12px' }}>GUARDAR Y SALIR</button>
+                            <button className="btn" onClick={() => confirmExit(false)} style={{ backgroundColor: 'transparent', border: '1px solid #4a5568', padding: '12px' }}>SALIR SIN GUARDAR</button>
+                            <button className="btn btn-secondary" onClick={() => setShowExitConfirm(false)} style={{ padding: '12px' }}>CANCELAR</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div style={{ marginBottom: '20px', position: 'relative' }}>
                 <div className="card" style={{ padding: '12px 15px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>

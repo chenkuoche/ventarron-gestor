@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppProvider } from './context/AppContext';
+import { AppProvider, useAppContext } from './context/AppContext';
 import { auth, loginWithGoogle, logout } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -29,9 +29,139 @@ const iconMap = {
   Reportes: PieChart,
 };
 
-function App() {
+const MainLayout = ({ user }) => {
+  const { hasUnsavedChanges, setHasUnsavedChanges } = useAppContext();
   const [activePage, setActivePage] = useState('Asistencia y Pagos');
   const [isSidebarOpen, setSidebarOpen] = useState(true);
+
+  // Evitar cerrar pestaña o navegador si hay cambios sin guardar
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  const handlePageChange = (page) => {
+    if (page === activePage) return;
+
+    if (hasUnsavedChanges) {
+        if (!window.confirm('Tienes cambios sin guardar en Asistencias. ¿Quieres salir de todas formas?')) {
+            return;
+        }
+        setHasUnsavedChanges(false);
+    }
+
+    setActivePage(page);
+    if (window.innerWidth <= 768) {
+      setSidebarOpen(false);
+    }
+  };
+
+  const renderPage = () => {
+    switch (activePage) {
+      case 'Dashboard': return <Dashboard />;
+      case 'Alumnos': return <Students />;
+      case 'Asistencia y Pagos': return <Attendance />;
+      case 'Clases': return <Classes />;
+      case 'Reportes': return <Reports />;
+      default: return <Attendance />;
+    }
+  };
+
+  return (
+    <div className="app-container">
+      {/* Mobile Overlay */}
+      <div
+        className={`sidebar-overlay ${isSidebarOpen ? 'show' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      {/* Sidebar */}
+      <nav className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
+        <div className="sidebar-header" style={{ padding: '30px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 'bold' }}>Ventarrón</h2>
+          <span style={{ fontSize: '0.8rem', opacity: 0.6, letterSpacing: '1px' }}>Escuela de Tango</span>
+        </div>
+
+        <div className="sidebar-nav" style={{ flex: 1, padding: '20px 10px' }}>
+          {Object.keys(iconMap).map(page => {
+            const Icon = iconMap[page];
+            return (
+              <button
+                key={page}
+                className={`nav-btn ${activePage === page ? 'active' : ''}`}
+                onClick={() => handlePageChange(page)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '12px', width: '100%', padding: '12px 15px', color: activePage === page ? 'white' : '#bdc3c7',
+                  backgroundColor: activePage === page ? 'rgba(255,255,255,0.1)' : 'transparent', border: 'none', borderLeft: activePage === page ? '4px solid #e74c3c' : '4px solid transparent',
+                  borderRadius: '4px', cursor: 'pointer', fontSize: '15px', marginBottom: '5px', textAlign: 'left'
+                }}
+              >
+                <Icon size={18} />
+                {page}
+              </button>
+            );
+          })}
+        </div>
+        
+        <div style={{ padding: '15px 20px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ marginBottom: '15px', padding: '0 5px' }}>
+            <p style={{ fontSize: '11px', color: '#718096', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sesión iniciada como:</p>
+            <p style={{ fontSize: '13px', color: '#a0aec0', margin: '4px 0 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.email}>
+              {user.email}
+            </p>
+          </div>
+          <button 
+            onClick={logout}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px', 
+              backgroundColor: 'transparent', border: '1px solid #4a5568', borderRadius: '4px', 
+              color: '#bdc3c7', cursor: 'pointer', transition: 'all 0.2s'
+            }}
+            onMouseOver={(e) => e.target.style.backgroundColor = 'rgba(231, 76, 60, 0.1)'}
+            onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
+          >
+            <LogOut size={16} /> Salir
+          </button>
+        </div>
+      </nav>
+
+      {/* Content */}
+      <main className="main-content">
+        {/* Header */}
+        <header style={{
+          height: '70px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex',
+          justifyContent: 'space-between', alignItems: 'center', padding: '0 40px',
+          backgroundColor: '#2c3e50', position: 'sticky', top: 0, zIndex: 10
+        }}>
+          <div className="flex align-center gap-10" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              onClick={() => setSidebarOpen(!isSidebarOpen)}
+              style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}
+            >
+              <Menu size={24} />
+            </button>
+            <h3 style={{ margin: 0 }}>{activePage}</h3>
+          </div>
+          <div className="flex align-center gap-10">
+            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.2.0</span>
+          </div>
+        </header>
+
+        <div className="container" style={{ padding: '30px 40px' }}>
+          {renderPage()}
+        </div>
+      </main>
+    </div>
+  );
+};
+
+function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorVisible, setErrorVisible] = useState('');
@@ -100,110 +230,9 @@ function App() {
     );
   }
 
-  const handlePageChange = (page) => {
-    setActivePage(page);
-    if (window.innerWidth <= 768) {
-      setSidebarOpen(false);
-    }
-  };
-
-  const renderPage = () => {
-    switch (activePage) {
-      case 'Dashboard': return <Dashboard />;
-      case 'Alumnos': return <Students />;
-      case 'Asistencia y Pagos': return <Attendance />;
-      case 'Clases': return <Classes />;
-      case 'Reportes': return <Reports />;
-      default: return <Attendance />;
-    }
-  };
-
   return (
     <AppProvider>
-      <div className="app-container">
-        {/* Mobile Overlay */}
-        <div
-          className={`sidebar-overlay ${isSidebarOpen ? 'show' : ''}`}
-          onClick={() => setSidebarOpen(false)}
-        />
-
-        {/* Sidebar */}
-        <nav className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
-          <div className="sidebar-header" style={{ padding: '30px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: 'bold' }}>Ventarrón</h2>
-            <span style={{ fontSize: '0.8rem', opacity: 0.6, letterSpacing: '1px' }}>Escuela de Tango</span>
-          </div>
-
-          <div className="sidebar-nav" style={{ flex: 1, padding: '20px 10px' }}>
-            {Object.keys(iconMap).map(page => {
-              const Icon = iconMap[page];
-              return (
-                <button
-                  key={page}
-                  className={`nav-btn ${activePage === page ? 'active' : ''}`}
-                  onClick={() => handlePageChange(page)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '12px', width: '100%', padding: '12px 15px', color: activePage === page ? 'white' : '#bdc3c7',
-                    backgroundColor: activePage === page ? 'rgba(255,255,255,0.1)' : 'transparent', border: 'none', borderLeft: activePage === page ? '4px solid #e74c3c' : '4px solid transparent',
-                    borderRadius: '4px', cursor: 'pointer', fontSize: '15px', marginBottom: '5px', textAlign: 'left'
-                  }}
-                >
-                  <Icon size={18} />
-                  {page}
-                </button>
-              );
-            })}
-          </div>
-          
-          <div style={{ padding: '15px 20px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ marginBottom: '15px', padding: '0 5px' }}>
-              <p style={{ fontSize: '11px', color: '#718096', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sesión iniciada como:</p>
-              <p style={{ fontSize: '13px', color: '#a0aec0', margin: '4px 0 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.email}>
-                {user.email}
-              </p>
-            </div>
-            <button 
-              onClick={logout}
-              style={{ 
-                display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px', 
-                backgroundColor: 'transparent', border: '1px solid #4a5568', borderRadius: '4px', 
-                color: '#bdc3c7', cursor: 'pointer', transition: 'all 0.2s'
-              }}
-              onMouseOver={(e) => e.target.style.backgroundColor = 'rgba(231, 76, 60, 0.1)'}
-              onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
-            >
-              <LogOut size={16} /> Salir
-            </button>
-          </div>
-        </nav>
-
-        {/* Content */}
-        <main className="main-content">
-          {/* Header */}
-          <header style={{
-            height: '70px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex',
-            justifyContent: 'space-between', alignItems: 'center', padding: '0 40px',
-            backgroundColor: '#2c3e50', position: 'sticky', top: 0, zIndex: 10
-          }}>
-            <div className="flex align-center gap-10" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button
-                onClick={() => setSidebarOpen(!isSidebarOpen)}
-                style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}
-              >
-                <Menu size={24} />
-              </button>
-              <h3 style={{ margin: 0 }}>{activePage}</h3>
-            </div>
-            <div className="flex align-center gap-10">
-              <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.0.3</span>
-            </div>
-          </header>
-
-          <div className="container" style={{ padding: '30px 40px' }}>
-            {renderPage()}
-          </div>
-        </main>
-      </div>
+      <MainLayout user={user} />
     </AppProvider>
   );
 }

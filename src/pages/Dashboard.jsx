@@ -3,7 +3,18 @@ import { useAppContext } from '../context/AppContext';
 import { Users, Wallet, Calendar, TrendingUp, ArrowUpRight, Clock, MapPin } from 'lucide-react';
 
 const Dashboard = () => {
-    const { students, classes, records } = useAppContext();
+    const { students, classes, records, clearAllRecords } = useAppContext();
+
+    const handleClearDb = async () => {
+        if (window.confirm('¿Estás seguro de que quieres borrar TODOS los registros de asistencia y pagos? Esta acción no se puede deshacer.')) {
+            try {
+                await clearAllRecords();
+            } catch (error) {
+                console.error(error);
+                alert('Error al limpiar la base de datos.');
+            }
+        }
+    };
 
     // Current month stats
     const today = new Date();
@@ -36,9 +47,25 @@ const Dashboard = () => {
 
     return (
         <div className="dashboard">
-            <header style={{ marginBottom: '30px' }}>
-                <h2 style={{ margin: 0, fontSize: '1.8rem' }}>¡Hola, Ventarrón! 🌪️</h2>
-                <p style={{ margin: '5px 0 0', opacity: 0.5 }}>Aquí tienes un resumen de lo que va del mes.</p>
+            <header style={{ marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                    <h2 style={{ margin: 0, fontSize: '1.8rem' }}>¡Hola, Ventarrón! 🌪️</h2>
+                    <p style={{ margin: '5px 0 0', opacity: 0.5 }}>Aquí tienes un resumen de lo que va del mes.</p>
+                </div>
+                <button 
+                    onClick={handleClearDb}
+                    style={{ 
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)', 
+                        color: '#e74c3c', 
+                        border: '1px solid rgba(231, 76, 60, 0.2)', 
+                        padding: '8px 15px', 
+                        borderRadius: '6px', 
+                        fontSize: '11px',
+                        cursor: 'pointer'
+                    }}
+                >
+                    Limpiar Datos de Prueba
+                </button>
             </header>
 
             <div className="grid-stats" style={{
