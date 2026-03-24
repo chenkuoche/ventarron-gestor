@@ -146,7 +146,7 @@ const MainLayout = ({ user }) => {
             </button>
             <h3 style={{ margin: 0 }}>{activePage}</h3>
           </div>
-            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.4.4</span>
+            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.4.5</span>
         </header>
 
         <div className="container" style={{ padding: '30px 40px' }}>

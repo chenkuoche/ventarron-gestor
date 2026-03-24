@@ -437,7 +437,11 @@ const Attendance = () => {
                                                     </div>
                                                 )}
                                                 {type && (
-                                                    <button onClick={() => removeExtra(student.id)} style={{ background: 'rgba(231, 76, 60, 0.1)', border: '1px solid rgba(231, 76, 60, 0.2)', color: '#e74c3c', fontSize: '10px', padding: '5px', borderRadius: '4px' }}>Quitar</button>
+                                                    <button onClick={() => {
+                                                        if (window.confirm(`¿Deseas quitar a ${student.name} de esta clase?`)) {
+                                                            removeExtra(student.id);
+                                                        }
+                                                    }} style={{ background: 'rgba(231, 76, 60, 0.1)', border: '1px solid rgba(231, 76, 60, 0.2)', color: '#e74c3c', fontSize: '10px', padding: '5px', borderRadius: '4px' }}>Quitar</button>
                                                 )}
                                             </div>
                                         </td>

@@ -274,7 +274,11 @@ const Students = () => {
                                                     <Edit2 size={16} />
                                                 </button>
                                                 <button
-                                                    onClick={() => deleteStudent(student.id)}
+                                                    onClick={() => {
+                                                        if (window.confirm(`¿Estás seguro de ELIMINAR definitivamente a ${student.name}? Esta acción no se puede deshacer.`)) {
+                                                            deleteStudent(student.id);
+                                                        }
+                                                    }}
                                                     style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', padding: '5px' }}
                                                 >
                                                     <Trash2 size={16} />

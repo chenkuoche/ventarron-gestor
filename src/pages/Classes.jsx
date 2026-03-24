@@ -199,7 +199,11 @@ const Classes = () => {
                                                     <Edit2 size={18} />
                                                 </button>
                                                 <button
-                                                    onClick={() => deleteClass(cls.id)}
+                                                    onClick={() => {
+                                                        if (window.confirm(`¿Estás seguro de ELIMINAR la clase "${cls.name}"? Esto también podría afectar los registros de asistencia asociados.`)) {
+                                                            deleteClass(cls.id);
+                                                        }
+                                                    }}
                                                     style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer' }}
                                                 >
                                                     <Trash2 size={18} />
