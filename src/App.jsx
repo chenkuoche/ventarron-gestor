@@ -20,12 +20,14 @@ import Students from './pages/Students';
 import Attendance from './pages/Attendance';
 import Classes from './pages/Classes';
 import Reports from './pages/Reports';
+import Payments from './pages/Payments';
 
 const iconMap = {
+  Dashboard: Home,
   'Asistencia y Pagos': CircleCheck,
+  Pagos: Wallet,
   Alumnos: Users,
   Clases: Calendar,
-  Dashboard: Home,
   Reportes: PieChart,
 };
 
@@ -66,6 +68,7 @@ const MainLayout = ({ user }) => {
       case 'Dashboard': return <Dashboard />;
       case 'Alumnos': return <Students />;
       case 'Asistencia y Pagos': return <Attendance />;
+      case 'Pagos': return <Payments />;
       case 'Clases': return <Classes />;
       case 'Reportes': return <Reports />;
       default: return <Attendance />;
@@ -146,7 +149,7 @@ const MainLayout = ({ user }) => {
             </button>
             <h3 style={{ margin: 0 }}>{activePage}</h3>
           </div>
-            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.4.5</span>
+            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.4.6</span> {/* Version bumped to v1.4.6 */}
         </header>
 
         <div className="container" style={{ padding: '30px 40px' }}>
