@@ -167,6 +167,23 @@ h3 {
   gap: 20px;
 }
 
+.flex-wrap {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 600px) {
+  .responsive-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 15px !important;
+  }
+  
+  .responsive-header > div {
+    width: 100%;
+    text-align: left !important;
+  }
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

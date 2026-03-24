@@ -146,6 +146,18 @@ export const AppProvider = ({ children }) => {
         const mailer = httpsCallable(functions, 'sendEmail');
         return await mailer(data);
       },
+      triggerTestReminder: async (data) => {
+        const mailer = httpsCallable(functions, 'triggerTestReminder');
+        return await mailer(data);
+      },
+      getPendingReminders: async (data) => {
+        const mailer = httpsCallable(functions, 'getPendingReminders');
+        return await mailer(data);
+      },
+      triggerManualReminders: async (data) => {
+        const mailer = httpsCallable(functions, 'triggerManualReminders');
+        return await mailer(data);
+      },
       markReceiptSent: async (date, classId, studentId) => {
         const q = query(
           collection(db, 'attendance_records'),
