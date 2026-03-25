@@ -13,7 +13,8 @@ import {
     Send,
     Eye,
     CheckCircle2,
-    Loader2
+    Loader2,
+    Download
 } from 'lucide-react';
 
 const Reports = () => {
@@ -30,14 +31,29 @@ const Reports = () => {
         'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
     ];
 
-    const currentMonthRecords = records.filter(r => {
-        const recordDate = new Date(r.date);
-        return recordDate.getMonth() === selectedMonth && recordDate.getFullYear() === selectedYear;
-    });
+    const monthStr = (selectedMonth + 1).toString().padStart(2, '0');
+    const yearMonth = `${selectedYear}-${monthStr}`;
+
+    const currentMonthRecords = records.filter(r => r.date && r.date.startsWith(yearMonth));
 
     // Calculate stats by Class
     const classBreakdown = classes.map(cls => {
-        const classRecords = currentMonthRecords.filter(r => r.classId === cls.id);
+        let classRecords = currentMonthRecords.filter(r => r.classId === cls.id);
+        
+        const dayOfWeekMap = {
+            'Sunday': 'Domingo', 'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
+            'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado'
+        };
+
+        // Filtramos estrictamente para que solo cuenten registros que coincidan con el día programado de la clase
+        // Esto ignora errores accidentales de marcar asistencia en el día equivocado.
+        classRecords = classRecords.filter(r => {
+            if (r.studentId === 'NO_CLASS') return true; // Mantener marcas de "Sin Clase"
+            const dObj = new Date(r.date + 'T12:00:00');
+            const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
+            return dayOfWeekMap[dNameEn] === cls.day;
+        });
+
         const totalIncome = classRecords.reduce((acc, r) => acc + (parseFloat(r.paymentAmount) || 0), 0);
         const cashIncome = classRecords
             .filter(r => r.paymentMethod === 'cash')
@@ -49,7 +65,15 @@ const Reports = () => {
         // Attendance stats
         const totalAttendances = classRecords.filter(r => r.present).length;
         const guestAttendances = classRecords.filter(r => r.present && r.isGuest).length;
-        const sessionsHeld = [...new Set(classRecords.map(r => r.date))].length;
+        
+        // Excluimos las fechas marcadas explícitamente como "NO_CLASS"
+        const datesWithNoClass = new Set(classRecords.filter(r => r.studentId === 'NO_CLASS').map(r => r.date));
+        
+        const sessionDates = [...new Set(classRecords.filter(r => {
+            return r.studentId !== 'NO_CLASS' && !datesWithNoClass.has(r.date);
+        }).map(r => r.date))].sort();
+        
+        const sessionsHeld = sessionDates.length;
 
         const totalRent = sessionsHeld * (cls.rent || 0);
         const profitBeforeSplit = totalIncome - totalRent;
@@ -58,10 +82,12 @@ const Reports = () => {
         return {
             ...cls,
             sessionsHeld,
+            sessionDates,
             totalIncome,
             cashIncome,
             transferIncome,
             totalRent,
+            profitBeforeSplit,
             userProfit,
             totalAttendances,
             guestAttendances
@@ -74,6 +100,120 @@ const Reports = () => {
     const totalMonthlyRent = classBreakdown.reduce((acc, c) => acc + c.totalRent, 0);
     const totalUserProfit = classBreakdown.reduce((acc, c) => acc + c.userProfit, 0);
     const totalAttendancesMonth = classBreakdown.reduce((acc, c) => acc + c.totalAttendances, 0);
+
+    const exportToCSV = () => {
+        const headers = ["Clase", "Dia/Hora", "Sesiones", "Ingreso Total", "Efectivo", "Transferencia", "Alquiler", "Ganancia Total", "División", "Ganancia Final"];
+        const rows = classBreakdown.map(c => [
+            c.name,
+            `${c.day} ${c.time}`,
+            c.sessionsHeld,
+            c.totalIncome,
+            c.cashIncome,
+            c.transferIncome,
+            c.totalRent,
+            c.profitBeforeSplit,
+            c.profitSplit === 1 ? "100%" : "50/50",
+            c.userProfit
+        ]);
+
+        const csvContent = [
+            headers.join(","),
+            ...rows.map(row => row.join(","))
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Balance_Ventarron_${months[selectedMonth]}_${selectedYear}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const exportClassDetail = (clsId) => {
+        const cls = classes.find(c => c.id === clsId);
+        if (!cls) return;
+
+        let classRecords = currentMonthRecords.filter(r => r.classId === clsId);
+        
+        const dayOfWeekMap = {
+            'Sunday': 'Domingo', 'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
+            'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado'
+        };
+
+        // Filtramos estrictamente para que solo cuenten registros que coincidan con el día programado de la clase
+        classRecords = classRecords.filter(r => {
+            if (r.studentId === 'NO_CLASS') return true; 
+            const dObj = new Date(r.date + 'T12:00:00');
+            const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
+            return dayOfWeekMap[dNameEn] === cls.day;
+        });
+
+        const datesWithNoClass = new Set(classRecords.filter(r => r.studentId === 'NO_CLASS').map(r => r.date));
+        const classDates = [...new Set(classRecords.filter(r => r.studentId !== 'NO_CLASS' && !datesWithNoClass.has(r.date)).map(r => r.date))].sort();
+        
+        // Estudiantes que tienen al menos un registro este mes para esta clase
+        const relevantStudentIds = [...new Set(classRecords.filter(r => r.studentId !== 'NO_CLASS').map(r => r.studentId))];
+        const relevantStudents = relevantStudentIds.map(id => students.find(s => s.id === id)).filter(Boolean).sort((a,b) => a.name.localeCompare(b.name));
+
+        const headers = ["Alumno", ...classDates.map(d => new Date(d + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })), "Total Pagado"];
+        
+        const rows = relevantStudents.map(student => {
+            let studentTotal = 0;
+            const columns = classDates.map(date => {
+                const rec = classRecords.find(r => r.studentId === student.id && r.date === date);
+                if (!rec) return "-";
+                
+                const amount = parseFloat(rec.paymentAmount) || 0;
+                studentTotal += amount;
+                
+                let cell = rec.present ? "[A]" : "[-] ";
+                if (amount > 0) cell += ` $${amount}`;
+                return cell;
+            });
+            return [student.name, ...columns, `$${studentTotal}`];
+        });
+
+        // Cálculos de resumen financiero para esta clase
+        const clsSummary = classBreakdown.find(c => c.id === clsId);
+        const totalIncomeLabel = `Total Ingresos:,$${clsSummary.totalIncome}`;
+        const totalRentLabel = `Alquiler (${clsSummary.sessionsHeld} días):,$${clsSummary.totalRent}`;
+        const profitToSplitLabel = `Ganancia a repartir:,$${clsSummary.profitBeforeSplit}`;
+        
+        let profitSplitRows = [];
+        if (clsSummary.profitSplit === 1) {
+            profitSplitRows.push(`Ganancia Profesor (100%):,$${clsSummary.userProfit}`);
+        } else {
+            const partnerProfit = clsSummary.profitBeforeSplit * (1 - clsSummary.profitSplit);
+            profitSplitRows.push(`Ganancia Profesor 1:,$${clsSummary.userProfit}`);
+            profitSplitRows.push(`Ganancia Profesor 2:,$${partnerProfit}`);
+        }
+
+        const csvContent = [
+            [`Detalle de Asistencia y Pagos - ${cls.name}`, `${months[selectedMonth]} ${selectedYear}`].join(","),
+            [],
+            headers.join(","),
+            ...rows.map(row => row.join(",")),
+            [], // Espacio
+            ["RESUMEN FINANCIERO"],
+            [totalIncomeLabel],
+            [totalRentLabel],
+            [profitToSplitLabel],
+            ...profitSplitRows.map(row => [row])
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Detalle_${cls.name.replace(/\s+/g, '_')}_${months[selectedMonth]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     return (
         <div className="reports-page" style={{ padding: '0 5px' }}>
@@ -97,9 +237,14 @@ const Reports = () => {
                         </select>
                     </div>
                 </div>
-                <div>
-                    <p style={{ margin: 0, fontSize: '11px', opacity: 0.5, letterSpacing: '1px' }}>RESUMEN MENSUAL</p>
-                    <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{months[selectedMonth]} {selectedYear}</h3>
+                <div className="flex gap-10">
+                    <button className="btn btn-secondary" onClick={exportToCSV} style={{ padding: '10px 15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Download size={18} /> EXPORTAR BALANCE
+                    </button>
+                    <div>
+                        <p style={{ margin: 0, fontSize: '11px', opacity: 0.5, letterSpacing: '1px', textAlign: 'right' }}>RESUMEN MENSUAL</p>
+                        <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{months[selectedMonth]} {selectedYear}</h3>
+                    </div>
                 </div>
             </header>
 
@@ -157,9 +302,10 @@ const Reports = () => {
                                 <th style={{ padding: '15px' }}>Clase</th>
                                 <th>Asistencias</th>
                                 <th>Ingresos</th>
-                                <th>Alquiler</th>
-                                <th>División</th>
-                                <th style={{ textAlign: 'right', paddingRight: '20px' }}>Ganancia</th>
+                                 <th style={{ textAlign: 'center' }}>Alquiler</th>
+                                <th style={{ textAlign: 'center' }}>División</th>
+                                <th style={{ textAlign: 'right' }}>Ganancia</th>
+                                <th style={{ textAlign: 'center', paddingRight: '15px', width: '60px' }}>Planilla</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -176,12 +322,28 @@ const Reports = () => {
                                         </div>
                                     </td>
                                     <td>${cls.totalIncome.toLocaleString()}</td>
-                                    <td>${cls.totalRent.toLocaleString()}</td>
-                                    <td style={{ fontSize: '12px' }}>
+                                    <td style={{ textAlign: 'center' }}>
+                                        ${cls.totalRent.toLocaleString()}<br/>
+                                        <div style={{ fontSize: '9px', opacity: 0.5, marginTop: '4px' }}>
+                                            <strong>({cls.sessionsHeld} días)</strong><br/>
+                                            {cls.sessionDates.map(d => new Date(d + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit' })).join(', ')}
+                                        </div>
+                                    </td>
+                                    <td style={{ textAlign: 'center', fontSize: '12px' }}>
                                         {cls.profitSplit === 1 ? '100%' : '50% (Colega)'}
                                     </td>
-                                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#2ecc71', paddingRight: '20px' }}>
+                                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#2ecc71' }}>
                                         ${cls.userProfit.toLocaleString()}
+                                    </td>
+                                    <td style={{ textAlign: 'center', paddingRight: '15px' }}>
+                                        <button 
+                                            className="btn btn-secondary" 
+                                            onClick={() => exportClassDetail(cls.id)} 
+                                            style={{ padding: '8px', background: 'rgba(52, 152, 219, 0.1)', border: '1px solid rgba(52, 152, 219, 0.2)', color: '#3498db' }}
+                                            title="Descargar planilla detallada"
+                                        >
+                                            <Download size={16} />
+                                        </button>
                                     </td>
                                 </tr>
                             ))}

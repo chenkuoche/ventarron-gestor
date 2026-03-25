@@ -6,7 +6,9 @@ const Dashboard = () => {
     const { students, classes, records, clearAllRecords, setActivePage, setSelectedClassId } = useAppContext();
 
     const handleClearDb = async () => {
-        if (window.confirm('¿Estás seguro de que quieres borrar TODOS los registros de asistencia y pagos? Esta acción no se puede deshacer.')) {
+        const confirmed = window.confirm('⚠ ¡ATENCIÓN! ⚠\n\n¿Estás SEGURO de que deseas borrar TODOS los registros de asistencia y pagos?\n\nEsta acción es IRREVERSIBLE y NO HAY VUELTA ATRÁS. Perderás toda la información histórica.');
+        
+        if (confirmed) {
             try {
                 await clearAllRecords();
             } catch (error) {

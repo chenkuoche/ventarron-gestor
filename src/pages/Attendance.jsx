@@ -6,13 +6,15 @@ import {
     CreditCard,
     Save,
     ArrowLeft,
+    ChevronLeft,
     ChevronRight,
     Circle,
     Search,
     UserMinus,
     Mail,
     Loader2,
-    CheckCircle
+    CheckCircle,
+    CalendarOff
 } from 'lucide-react';
 
 const Attendance = () => {
@@ -23,7 +25,7 @@ const Attendance = () => {
     const [extraData, setExtraData] = useState({}); // { studentId: 'recovery' | 'guest' }
     const [isSaving, setIsSaving] = useState(false);
     const [feedbackMsg, setFeedbackMsg] = useState('');
-    const [showExitConfirm, setShowExitConfirm] = useState(false);
+    const [pendingAction, setPendingAction] = useState(null); // { type: 'exit' | 'date', value?: string }
     const [idsToDelete, setIdsToDelete] = useState([]); // Alumnos quitados de la lista (para borrar de Firestore)
     const [emailStatus, setEmailStatus] = useState({}); // { studentId: 'sending' | 'sent' | 'error' }
     const lastRemoteSync = React.useRef(null);
@@ -67,6 +69,10 @@ const Attendance = () => {
                 }
             });
 
+            if (existing.find(r => r.studentId === 'NO_CLASS')) {
+                initial['NO_CLASS'] = { present: false, paymentAmount: 0, paymentMethod: '' };
+            }
+
             const remoteHash = JSON.stringify(initial) + JSON.stringify(existingExtra);
             if (remoteHash !== lastRemoteSync.current) {
                 lastRemoteSync.current = remoteHash;
@@ -84,7 +90,7 @@ const Attendance = () => {
     }, [selectedClassId, selectedDate]);
 
     const handleSave = async () => {
-        if (!selectedClassId || isSaving) return;
+        if (!selectedClassId || isSaving) return false;
         setIsSaving(true);
         setFeedbackMsg('Enviando...');
         
@@ -97,19 +103,19 @@ const Attendance = () => {
         });
 
         try {
-            saveAttendanceAndPayment(selectedDate, selectedClassId, finalRecords, idsToDelete);
-            setTimeout(() => {
-                setHasUnsavedChanges(false);
-                setIdsToDelete([]);
-                setIsSaving(false);
-                setFeedbackMsg('¡GUARDADO! ✅');
-                setTimeout(() => setFeedbackMsg(''), 3000);
-            }, 800);
+            await saveAttendanceAndPayment(selectedDate, selectedClassId, finalRecords, idsToDelete);
+            setHasUnsavedChanges(false);
+            setIdsToDelete([]);
+            setIsSaving(false);
+            setFeedbackMsg('¡GUARDADO! ✅');
+            setTimeout(() => setFeedbackMsg(''), 3000);
+            return true;
         } catch (error) {
             console.error(error);
             setFeedbackMsg('❌ Error al guardar');
             setIsSaving(false);
             setTimeout(() => setFeedbackMsg(''), 5000);
+            return false;
         }
     };
 
@@ -169,15 +175,60 @@ const Attendance = () => {
     };
 
     const handleExit = () => {
-        if (hasUnsavedChanges) setShowExitConfirm(true);
+        if (hasUnsavedChanges) setPendingAction({ type: 'exit' });
         else setSelectedClassId('');
     };
 
-    const confirmExit = (shouldSave) => {
-        if (shouldSave) handleSave();
+    const handleDateChange = (newDate) => {
+        if (hasUnsavedChanges) setPendingAction({ type: 'date', value: newDate });
+        else setSelectedDate(newDate);
+    };
+
+    const moveDate = (days) => {
+        const date = new Date(selectedDate + 'T12:00:00');
+        date.setDate(date.getDate() + days);
+        handleDateChange(date.toISOString().split('T')[0]);
+    };
+
+    const toggleNoClass = async () => {
+        const isCurrentlyNoClass = studentRecords['NO_CLASS'];
+        if (isCurrentlyNoClass) {
+            // Quitar marca de No Clase
+            if (window.confirm("¿Deseas volver a habilitar esta fecha como día de clase?")) {
+                setHasUnsavedChanges(true);
+                const newStudentRecords = { ...studentRecords };
+                delete newStudentRecords['NO_CLASS'];
+                setStudentRecords(newStudentRecords);
+                setIdsToDelete(prev => [...new Set([...prev, 'NO_CLASS'])]);
+            }
+        } else {
+            // Marcar como No Clase
+            if (window.confirm("¿Estás seguro de marcar este día como 'SIN CLASE'? No se computará el alquiler en los reportes.")) {
+                setHasUnsavedChanges(true);
+                // Ponemos todos los que estaban en idsToDelete para que se borren y solo quede NO_CLASS
+                const currentlyVisible = Object.keys(studentRecords);
+                setIdsToDelete(prev => [...new Set([...prev, ...currentlyVisible])]);
+                setStudentRecords({ 'NO_CLASS': { present: false, paymentAmount: 0, paymentMethod: '' } });
+                setExtraData({});
+            }
+        }
+    };
+
+    const confirmAction = async (shouldSave) => {
+        if (shouldSave) {
+            const success = await handleSave();
+            if (!success) return;
+        }
+        
+        const action = pendingAction;
+        setPendingAction(null);
         setHasUnsavedChanges(false);
-        setShowExitConfirm(false);
-        setSelectedClassId('');
+        
+        if (action.type === 'exit') {
+            setSelectedClassId('');
+        } else if (action.type === 'date') {
+            setSelectedDate(action.value);
+        }
     };
 
     const togglePresence = (studentId) => {
@@ -261,6 +312,19 @@ const Attendance = () => {
     const selectedClass = classes.find(c => c.id === selectedClassId);
     if (!selectedClass) return null;
 
+    const dayNameMap = {
+        'Sunday': 'Domingo', 'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
+        'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado'
+    };
+    
+    // Obtener el nombre del día de la fecha seleccionada
+    const selectedDateObj = new Date(selectedDate + 'T12:00:00');
+    const dayNameEn = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' });
+    const selectedDayName = dayNameMap[dayNameEn];
+    
+    const isAutomaticNoClass = selectedClass && selectedDayName !== selectedClass.day;
+    const isNoClassActive = studentRecords['NO_CLASS'] || isAutomaticNoClass;
+
     const extraIdsArr = Object.keys(extraData);
     const visibleStudents = students.filter(s =>
         (s.enrolledClasses || []).includes(selectedClassId) ||
@@ -299,9 +363,36 @@ const Attendance = () => {
                     <button className="btn btn-secondary" style={{ padding: '8px' }} onClick={handleExit}>
                         <ArrowLeft size={18} />
                     </button>
-                    <div>
-                        <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{selectedClass?.name}</h3>
-                        <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ background: 'none', border: 'none', color: 'white', padding: 0, fontSize: '12px', opacity: 0.6, marginBottom: 0 }} />
+                    <div className="flex align-center gap-10">
+                        <div>
+                            <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{selectedClass?.name}</h3>
+                            <div className="flex align-center gap-5">
+                                <button className="btn btn-secondary" style={{ padding: '2px', background: 'none', border: 'none' }} onClick={() => moveDate(-7)}>
+                                    <ChevronLeft size={16} opacity={0.6}/>
+                                </button>
+                                <input type="date" value={selectedDate} onChange={(e) => handleDateChange(e.target.value)} style={{ background: 'none', border: 'none', color: 'white', padding: 0, fontSize: '12px', opacity: 0.6, marginBottom: 0, width: '115px' }} />
+                                <button className="btn btn-secondary" style={{ padding: '2px', background: 'none', border: 'none' }} onClick={() => moveDate(7)}>
+                                    <ChevronRight size={16} opacity={0.6}/>
+                                </button>
+                            </div>
+                        </div>
+                        <button 
+                            className="btn btn-secondary" 
+                            style={{ 
+                                padding: '8px 12px', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '6px', 
+                                fontSize: '11px',
+                                backgroundColor: studentRecords['NO_CLASS'] ? '#e74c3c' : 'rgba(255,255,255,0.05)',
+                                color: studentRecords['NO_CLASS'] ? 'white' : 'white',
+                                borderColor: studentRecords['NO_CLASS'] ? '#e74c3c' : 'rgba(255,255,255,0.2)'
+                            }} 
+                            onClick={toggleNoClass}
+                        >
+                            <CalendarOff size={14} />
+                            {studentRecords['NO_CLASS'] ? 'SIN CLASE' : 'MARCAR SIN CLASE'}
+                        </button>
                     </div>
                 </div>
                 <div className="flex align-center gap-15">
@@ -314,144 +405,165 @@ const Attendance = () => {
                 </div>
             </header>
 
-            {showExitConfirm && (
+            {pendingAction && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
                     <div className="card" style={{ maxWidth: '400px', width: '100%', padding: '30px', textAlign: 'center' }}>
                         <h3 style={{ marginBottom: '15px' }}>¿Deseas guardar los cambios?</h3>
                         <p style={{ opacity: 0.7, marginBottom: '25px', fontSize: '14px' }}>Tienes cambios sin guardar en esta asistencia.</p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            <button className="btn" onClick={() => confirmExit(true)} style={{ backgroundColor: '#2ecc71', color: 'white', border: 'none', padding: '12px' }}>GUARDAR Y SALIR</button>
-                            <button className="btn" onClick={() => confirmExit(false)} style={{ backgroundColor: 'transparent', border: '1px solid #4a5568', padding: '12px' }}>SALIR SIN GUARDAR</button>
-                            <button className="btn btn-secondary" onClick={() => setShowExitConfirm(false)} style={{ padding: '12px' }}>CANCELAR</button>
+                            <button className="btn" onClick={() => confirmAction(true)} style={{ backgroundColor: '#2ecc71', color: 'white', border: 'none', padding: '12px' }}>GUARDAR Y CONTINUAR</button>
+                            <button className="btn" onClick={() => confirmAction(false)} style={{ backgroundColor: 'transparent', border: '1px solid #4a5568', padding: '12px' }}>CONTINUAR SIN GUARDAR</button>
+                            <button className="btn btn-secondary" onClick={() => setPendingAction(null)} style={{ padding: '12px' }}>CANCELAR</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            <div className="card" style={{ marginBottom: '20px', padding: '20px' }}>
-                <div className="flex gap-15 align-center" style={{ marginBottom: searchResults.length > 0 ? '15px' : 0 }}>
-                    <Search size={18} opacity={0.5} />
-                    <input 
-                        type="search" 
-                        placeholder="Buscar alumno para Recuperar o Invitado..." 
-                        value={searchExtra} 
-                        onChange={(e) => setSearchExtra(e.target.value)}
-                        style={{ background: 'none', border: 'none', color: 'white', flex: 1, marginBottom: 0 }}
-                    />
+            {isNoClassActive ? (
+                <div className="card" style={{ padding: '60px 20px', textAlign: 'center', backgroundColor: isAutomaticNoClass ? 'rgba(52, 152, 219, 0.1)' : 'rgba(231, 76, 60, 0.1)', border: isAutomaticNoClass ? '1px solid rgba(52, 152, 219, 0.2)' : '1px solid rgba(231, 76, 60, 0.2)' }}>
+                    {isAutomaticNoClass ? <Search size={50} color="#3498db" style={{ marginBottom: '20px', opacity: 0.5 }} /> : <CalendarOff size={50} color="#e74c3c" style={{ marginBottom: '20px', opacity: 0.5 }} />}
+                    <h2 style={{ margin: 0, color: isAutomaticNoClass ? '#3498db' : '#e74c3c' }}>
+                        {isAutomaticNoClass ? `ESTA CLASE NO TOCA UN ${selectedDayName.toUpperCase()}` : 'ESTE DÍA NO HUBO CLASE'}
+                    </h2>
+                    <p style={{ opacity: 0.7, maxWidth: '400px', margin: '15px auto 0' }}>
+                        {isAutomaticNoClass 
+                            ? `Este grupo está programado para los días ${selectedClass.day}. Estás visualizando un ${selectedDayName}.`
+                            : "Se ha marcado esta fecha como 'sin actividad'. No se computará alquiler ni asistencias para esta sesión."}
+                    </p>
+                    {isAutomaticNoClass && (
+                        <p style={{ fontSize: '12px', opacity: 0.5, marginTop: '10px' }}>
+                            Usa las flechas o el calendario para buscar el {selectedClass.day} correspondiente.
+                        </p>
+                    )}
                 </div>
-                {searchResults.length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {searchResults.map(s => (
-                            <div key={s.id} className="flex justify-between align-center" style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}>
-                                <span style={{ fontWeight: 500 }}>{s.name}</span>
-                                <div className="flex gap-10">
-                                    <button className="btn btn-secondary" style={{ fontSize: '11px', padding: '5px 10px' }} onClick={() => addExtraStudent(s, 'recovery')}>RECUPERA</button>
-                                    <button className="btn btn-secondary" style={{ fontSize: '11px', padding: '5px 10px' }} onClick={() => addExtraStudent(s, 'guest')}>INVITADO</button>
-                                    <button className="btn" style={{ fontSize: '11px', padding: '5px 10px', backgroundColor: '#3498db', color: 'white', border: 'none' }} onClick={() => enrollStudent(s)}>ANOTAR</button>
-                                </div>
-                            </div>
-                        ))}
+            ) : (
+                <>
+                <div className="card" style={{ marginBottom: '20px', padding: '20px' }}>
+                    <div className="flex gap-15 align-center" style={{ marginBottom: searchResults.length > 0 ? '15px' : 0 }}>
+                        <Search size={18} opacity={0.5} />
+                        <input 
+                            type="search" 
+                            placeholder="Buscar alumno para Recuperar o Invitado..." 
+                            value={searchExtra} 
+                            onChange={(e) => setSearchExtra(e.target.value)}
+                            style={{ background: 'none', border: 'none', color: 'white', flex: 1, marginBottom: 0 }}
+                        />
                     </div>
-                )}
-            </div>
-
-            <div className="card" style={{ padding: 0 }}>
-                <div style={{ overflowX: 'auto' }}>
-                    <table style={{ minWidth: '100%' }}>
-                        <thead style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
-                            <tr>
-                                <th style={{ padding: '15px', minWidth: '100px' }}>Alumno</th>
-                                <th style={{ width: '60px', minWidth: '60px', textAlign: 'center' }}>Asist.</th>
-                                <th>Pago y Recibo</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {visibleStudents.map(student => {
-                                const rec = studentRecords[student.id] || { present: false, paymentAmount: 0, paymentMethod: '', receiptSent: false };
-                                const studentStatus = emailStatus[student.id];
-                                const type = extraData[student.id];
-                                const activePlan = studentMonthlyStatus[student.id];
-                                
-                                const amountNum = Number(rec.paymentAmount);
-                                const isS = amountNum === Number(selectedClass.classPrice) && amountNum > 0;
-                                const is1xS = (amountNum === Number(selectedClass.monthlyPrice) && amountNum > 0) || (amountNum === 0 && activePlan?.plan === '1xS');
-                                const is2xS = (amountNum === Number(selectedClass.monthly2xsPrice) && amountNum > 0) || (amountNum === 0 && activePlan?.plan === '2xS');
-                                
-                                const activePlanMethod = (amountNum === 0 && activePlan) ? activePlan.paymentMethod : rec.paymentMethod;
-                                const pColor = activePlanMethod === 'transfer' ? '#3498db' : '#2ecc71';
-                                const pBg = activePlanMethod === 'transfer' ? 'rgba(52, 152, 219, 0.15)' : 'rgba(46, 204, 113, 0.15)';
-                                
-                                const isReceiptSentPersistent = rec.receiptSent || (amountNum === 0 && activePlan?.receiptSent);
-                                const currentEmailStatus = studentStatus || (isReceiptSentPersistent ? 'done' : null);
-
-                                return (
-                                    <tr key={student.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                        <td style={{ padding: '12px 15px' }}>
-                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ fontWeight: 600 }}>{student.name}</span>
-                                                {student.email && <span style={{ fontSize: '10px', opacity: 0.4 }}>{student.email}</span>}
-                                                <div className="flex gap-5 mt-2">
-                                                    {type === 'recovery' && <span style={{ fontSize: '9px', background: 'rgba(231, 76, 60, 0.2)', color: '#e74c3c', padding: '2px 5px', borderRadius: '3px' }}>RECUPERA</span>}
-                                                    {type === 'guest' && <span style={{ fontSize: '9px', background: 'rgba(241, 196, 15, 0.2)', color: '#f1c40f', padding: '2px 5px', borderRadius: '3px' }}>INVITADO</span>}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            <button onClick={() => togglePresence(student.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: rec.present ? '#2ecc71' : '#bdc3c7' }}>
-                                                {rec.present ? <CircleCheck size={28} /> : <Circle size={28} opacity={0.3} />}
-                                            </button>
-                                        </td>
-                                        <td style={{ padding: '10px 5px' }}>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                                    <input type="number" value={rec.paymentAmount} onChange={(e) => handleValueChange(student.id, 'paymentAmount', e.target.value)} style={{ marginBottom: 0, padding: '10px', fontSize: '16px', textAlign: 'center', flex: 1, minWidth: '70px', fontWeight: 'bold' }} />
-                                                    
-                                                    <button 
-                                                        disabled={(amountNum <= 0 && !activePlan) || !student.email || currentEmailStatus === 'sending'}
-                                                        onClick={() => handleSendReceipt(student, amountNum > 0 ? rec : activePlan ? { paymentAmount: activePlan.plan === '1xS' ? selectedClass.monthlyPrice : selectedClass.monthly2xsPrice } : rec)}
-                                                        className="btn"
-                                                        style={{ 
-                                                            padding: '10px', backgroundColor: currentEmailStatus === 'sent' || currentEmailStatus === 'done' ? '#2ecc71' : '#3498db', 
-                                                            border: 'none', opacity: ((amountNum > 0 || activePlan) && student.email) ? 1 : 0.3,
-                                                            transition: 'all 0.3s ease'
-                                                        }}
-                                                    >
-                                                        {currentEmailStatus === 'sending' ? <Loader2 size={18} className="spin" /> : 
-                                                         (currentEmailStatus === 'sent' || currentEmailStatus === 'done') ? <CheckCircle size={18} /> : 
-                                                         <Mail size={18} />}
-                                                    </button>
-
-                                                    <div style={{ display: 'flex', gap: '4px', flex: 1 }}>
-                                                        <button className="btn btn-secondary" onClick={() => handleValueChange(student.id, 'paymentMethod', 'cash')} style={{ padding: '10px 4px', flex: 1, fontSize: '12px', justifyContent: 'center', fontWeight: 'bold', ...((rec.paymentMethod === 'cash' || (amountNum === 0 && activePlan?.paymentMethod === 'cash')) ? { backgroundColor: '#2ecc71', color: 'white', borderColor: '#2ecc71' } : {}) }}>Efe</button>
-                                                        <button className="btn btn-secondary" onClick={() => handleValueChange(student.id, 'paymentMethod', 'transfer')} style={{ padding: '10px 4px', flex: 1, fontSize: '12px', justifyContent: 'center', fontWeight: 'bold', ...((rec.paymentMethod === 'transfer' || (amountNum === 0 && activePlan?.paymentMethod === 'transfer')) ? { backgroundColor: '#3498db', color: 'white', borderColor: '#3498db' } : {}) }}>Trf</button>
-                                                    </div>
-                                                </div>
-                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
-                                                    <button className="btn btn-secondary" style={{ padding: '8px 2px', fontSize: '10px', justifyContent: 'center', ...(isS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.classPrice)}>S: ${selectedClass.classPrice}</button>
-                                                    <button className="btn btn-secondary" style={{ padding: '8px 2px', fontSize: '10px', justifyContent: 'center', ...(is1xS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.monthlyPrice)}>1xS</button>
-                                                    <button className="btn btn-secondary" style={{ padding: '8px 2px', fontSize: '10px', justifyContent: 'center', ...(is2xS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.monthly2xsPrice)}>2xS</button>
-                                                </div>
-                                                {amountNum === 0 && activePlan && (
-                                                    <div style={{ fontSize: '10px', color: '#2ecc71', textAlign: 'center', marginTop: '-2px', fontWeight: '500' }}>
-                                                        Mensualidad abonada el {new Date(activePlan.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })}
-                                                    </div>
-                                                )}
-                                                {type && (
-                                                    <button onClick={() => {
-                                                        if (window.confirm(`¿Deseas quitar a ${student.name} de esta clase?`)) {
-                                                            removeExtra(student.id);
-                                                        }
-                                                    }} style={{ background: 'rgba(231, 76, 60, 0.1)', border: '1px solid rgba(231, 76, 60, 0.2)', color: '#e74c3c', fontSize: '10px', padding: '5px', borderRadius: '4px' }}>Quitar</button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                    {searchResults.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {searchResults.map(s => (
+                                <div key={s.id} className="flex justify-between align-center" style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}>
+                                    <span style={{ fontWeight: 500 }}>{s.name}</span>
+                                    <div className="flex gap-10">
+                                        <button className="btn btn-secondary" style={{ fontSize: '11px', padding: '5px 10px' }} onClick={() => addExtraStudent(s, 'recovery')}>RECUPERA</button>
+                                        <button className="btn btn-secondary" style={{ fontSize: '11px', padding: '5px 10px' }} onClick={() => addExtraStudent(s, 'guest')}>INVITADO</button>
+                                        <button className="btn" style={{ fontSize: '11px', padding: '5px 10px', backgroundColor: '#3498db', color: 'white', border: 'none' }} onClick={() => enrollStudent(s)}>ANOTAR</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
-            </div>
+
+                <div className="card" style={{ padding: 0 }}>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ minWidth: '100%' }}>
+                            <thead style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                                <tr>
+                                    <th style={{ padding: '15px', minWidth: '100px' }}>Alumno</th>
+                                    <th style={{ width: '60px', minWidth: '60px', textAlign: 'center' }}>Asist.</th>
+                                    <th>Pago y Recibo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {visibleStudents.map(student => {
+                                    const rec = studentRecords[student.id] || { present: false, paymentAmount: 0, paymentMethod: '', receiptSent: false };
+                                    const studentStatus = emailStatus[student.id];
+                                    const type = extraData[student.id];
+                                    const activePlan = studentMonthlyStatus[student.id];
+                                    
+                                    const amountNum = Number(rec.paymentAmount);
+                                    const isS = amountNum === Number(selectedClass.classPrice) && amountNum > 0;
+                                    const is1xS = (amountNum === Number(selectedClass.monthlyPrice) && amountNum > 0) || (amountNum === 0 && activePlan?.plan === '1xS');
+                                    const is2xS = (amountNum === Number(selectedClass.monthly2xsPrice) && amountNum > 0) || (amountNum === 0 && activePlan?.plan === '2xS');
+                                    
+                                    const activePlanMethod = (amountNum === 0 && activePlan) ? activePlan.paymentMethod : rec.paymentMethod;
+                                    const pColor = activePlanMethod === 'transfer' ? '#3498db' : '#2ecc71';
+                                    const pBg = activePlanMethod === 'transfer' ? 'rgba(52, 152, 219, 0.15)' : 'rgba(46, 204, 113, 0.15)';
+                                    
+                                    const isReceiptSentPersistent = rec.receiptSent || (amountNum === 0 && activePlan?.receiptSent);
+                                    const currentEmailStatus = studentStatus || (isReceiptSentPersistent ? 'done' : null);
+
+                                    return (
+                                        <tr key={student.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                            <td style={{ padding: '12px 15px' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                    <span style={{ fontWeight: 600 }}>{student.name}</span>
+                                                    {student.email && <span style={{ fontSize: '10px', opacity: 0.4 }}>{student.email}</span>}
+                                                    <div className="flex gap-5 mt-2">
+                                                        {type === 'recovery' && <span style={{ fontSize: '9px', background: 'rgba(231, 76, 60, 0.2)', color: '#e74c3c', padding: '2px 5px', borderRadius: '3px' }}>RECUPERA</span>}
+                                                        {type === 'guest' && <span style={{ fontSize: '9px', background: 'rgba(241, 196, 15, 0.2)', color: '#f1c40f', padding: '2px 5px', borderRadius: '3px' }}>INVITADO</span>}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td style={{ textAlign: 'center' }}>
+                                                <button onClick={() => togglePresence(student.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: rec.present ? '#2ecc71' : '#bdc3c7' }}>
+                                                    {rec.present ? <CircleCheck size={28} /> : <Circle size={28} opacity={0.3} />}
+                                                </button>
+                                            </td>
+                                            <td style={{ padding: '10px 5px' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                        <input type="number" value={rec.paymentAmount} onChange={(e) => handleValueChange(student.id, 'paymentAmount', e.target.value)} style={{ marginBottom: 0, padding: '10px', fontSize: '16px', textAlign: 'center', flex: 1, minWidth: '70px', fontWeight: 'bold' }} />
+                                                        
+                                                        <button 
+                                                            disabled={(amountNum <= 0 && !activePlan) || !student.email || currentEmailStatus === 'sending'}
+                                                            onClick={() => handleSendReceipt(student, amountNum > 0 ? rec : activePlan ? { paymentAmount: activePlan.plan === '1xS' ? selectedClass.monthlyPrice : selectedClass.monthly2xsPrice } : rec)}
+                                                            className="btn"
+                                                            style={{ 
+                                                                padding: '10px', backgroundColor: currentEmailStatus === 'sent' || currentEmailStatus === 'done' ? '#2ecc71' : '#3498db', 
+                                                                border: 'none', opacity: ((amountNum > 0 || activePlan) && student.email) ? 1 : 0.3,
+                                                                transition: 'all 0.3s ease'
+                                                            }}
+                                                        >
+                                                            {currentEmailStatus === 'sending' ? <Loader2 size={18} className="spin" /> : 
+                                                            (currentEmailStatus === 'sent' || currentEmailStatus === 'done') ? <CheckCircle size={18} /> : 
+                                                            <Mail size={18} />}
+                                                        </button>
+
+                                                        <div style={{ display: 'flex', gap: '4px', flex: 1 }}>
+                                                            <button className="btn btn-secondary" onClick={() => handleValueChange(student.id, 'paymentMethod', 'cash')} style={{ padding: '10px 4px', flex: 1, fontSize: '12px', justifyContent: 'center', fontWeight: 'bold', ...((rec.paymentMethod === 'cash' || (amountNum === 0 && activePlan?.paymentMethod === 'cash')) ? { backgroundColor: '#2ecc71', color: 'white', borderColor: '#2ecc71' } : {}) }}>Efe</button>
+                                                            <button className="btn btn-secondary" onClick={() => handleValueChange(student.id, 'paymentMethod', 'transfer')} style={{ padding: '10px 4px', flex: 1, fontSize: '12px', justifyContent: 'center', fontWeight: 'bold', ...((rec.paymentMethod === 'transfer' || (amountNum === 0 && activePlan?.paymentMethod === 'transfer')) ? { backgroundColor: '#3498db', color: 'white', borderColor: '#3498db' } : {}) }}>Trf</button>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                                                        <button className="btn btn-secondary" style={{ padding: '8px 2px', fontSize: '10px', justifyContent: 'center', ...(isS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.classPrice)}>S: ${selectedClass.classPrice}</button>
+                                                        <button className="btn btn-secondary" style={{ padding: '8px 2px', fontSize: '10px', justifyContent: 'center', ...(is1xS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.monthlyPrice)}>1xS</button>
+                                                        <button className="btn btn-secondary" style={{ padding: '8px 2px', fontSize: '10px', justifyContent: 'center', ...(is2xS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.monthly2xsPrice)}>2xS</button>
+                                                    </div>
+                                                    {amountNum === 0 && activePlan && (
+                                                        <div style={{ fontSize: '10px', color: '#2ecc71', textAlign: 'center', marginTop: '-2px', fontWeight: '500' }}>
+                                                            Mensualidad abonada el {new Date(activePlan.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })}
+                                                        </div>
+                                                    )}
+                                                    {type && (
+                                                        <button onClick={() => {
+                                                            if (window.confirm(`¿Deseas quitar a ${student.name} de esta clase?`)) {
+                                                                removeExtra(student.id);
+                                                            }
+                                                        }} style={{ background: 'rgba(231, 76, 60, 0.1)', border: '1px solid rgba(231, 76, 60, 0.2)', color: '#e74c3c', fontSize: '10px', padding: '5px', borderRadius: '4px' }}>Quitar</button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                </>
+            )}
         </div>
     );
 };

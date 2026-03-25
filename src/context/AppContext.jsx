@@ -30,7 +30,8 @@ export const AppProvider = ({ children }) => {
   // 1. Sincronizar Alumnos en tiempo real
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'students'), (snapshot) => {
-      const studentData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const studentData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' }));
       setStudents(studentData);
       setLoading(false);
     });
