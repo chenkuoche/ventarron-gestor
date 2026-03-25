@@ -149,7 +149,7 @@ const MainLayout = ({ user }) => {
             </button>
             <h3 style={{ margin: 0 }}>{activePage}</h3>
           </div>
-            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.5.0</span> {/* Último cambio: Exportación detallada y Marcador Sin Clase */}
+            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.5.1</span> {/* Mejoras móvil Reportes & Reporte Mensual Automático */}
         </header>
 
         <div className="container" style={{ padding: '30px 40px' }}>

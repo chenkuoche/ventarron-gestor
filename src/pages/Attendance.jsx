@@ -49,7 +49,9 @@ const Attendance = () => {
                         receiptSent: record.receiptSent
                     };
                     if (!(s.enrolledClasses || []).includes(selectedClassId)) {
-                        existingExtra[s.id] = record.isGuest ? 'guest' : 'recovery';
+                        if (record.isGuest) existingExtra[s.id] = 'guest';
+                        else if (record.isRecovery) existingExtra[s.id] = 'recovery';
+                        else existingExtra[s.id] = 'recovery'; // Asunción histórica
                     }
                 } else if ((s.enrolledClasses || []).includes(selectedClassId)) {
                     initial[s.id] = {
@@ -98,7 +100,8 @@ const Attendance = () => {
         Object.keys(studentRecords).forEach(id => {
             finalRecords[id] = {
                 ...studentRecords[id],
-                isGuest: extraData[id] === 'guest'
+                isGuest: extraData[id] === 'guest',
+                isRecovery: extraData[id] === 'recovery'
             };
         });
 
@@ -498,7 +501,7 @@ const Attendance = () => {
                                         <tr key={student.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                             <td style={{ padding: '12px 15px' }}>
                                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                    <span style={{ fontWeight: 600 }}>{student.name}</span>
+                                                    <span style={{ fontWeight: 600 }} spellCheck="false" autoCorrect="off" autoCapitalize="none">{student.name}</span>
                                                     {student.email && <span style={{ fontSize: '10px', opacity: 0.4 }}>{student.email}</span>}
                                                     <div className="flex gap-5 mt-2">
                                                         {type === 'recovery' && <span style={{ fontSize: '9px', background: 'rgba(231, 76, 60, 0.2)', color: '#e74c3c', padding: '2px 5px', borderRadius: '3px' }}>RECUPERA</span>}

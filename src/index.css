@@ -175,11 +175,25 @@ h3 {
   .responsive-header {
     flex-direction: column !important;
     align-items: flex-start !important;
-    gap: 15px !important;
+    gap: 20px !important;
+    padding: 15px !important;
   }
   
   .responsive-header > div {
+    display: flex;
+    flex-direction: column;
     width: 100%;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  /* Ajuste específico para que el botón de exportar y el título se vean bien */
+  .responsive-header .flex.gap-10 {
+    flex-direction: column-reverse;
+  }
+
+  .responsive-header p, 
+  .responsive-header h3 {
     text-align: left !important;
   }
 }

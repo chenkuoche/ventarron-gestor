@@ -24,6 +24,7 @@ const Reports = () => {
     const [pendingReminders, setPendingReminders] = useState(null);
     const [isLoadingPending, setIsLoadingPending] = useState(false);
     const [isSending, setIsSending] = useState(false);
+    const [expandedDebtor, setExpandedDebtor] = useState(null);
 
 
     const months = [
@@ -65,6 +66,7 @@ const Reports = () => {
         // Attendance stats
         const totalAttendances = classRecords.filter(r => r.present).length;
         const guestAttendances = classRecords.filter(r => r.present && r.isGuest).length;
+        const recoveryAttendances = classRecords.filter(r => r.present && r.isRecovery).length;
         
         // Excluimos las fechas marcadas explícitamente como "NO_CLASS"
         const datesWithNoClass = new Set(classRecords.filter(r => r.studentId === 'NO_CLASS').map(r => r.date));
@@ -90,7 +92,8 @@ const Reports = () => {
             profitBeforeSplit,
             userProfit,
             totalAttendances,
-            guestAttendances
+            guestAttendances,
+            recoveryAttendances
         };
     });
 
@@ -169,7 +172,14 @@ const Reports = () => {
                 const amount = parseFloat(rec.paymentAmount) || 0;
                 studentTotal += amount;
                 
-                let cell = rec.present ? "[A]" : "[-] ";
+                let mark = "A";
+                if (rec.isGuest) {
+                    mark = "INV";
+                } else if (rec.isRecovery || !(student.enrolledClasses || []).includes(clsId)) {
+                    mark = "R";
+                }
+                
+                let cell = rec.present ? `[${mark}]` : "[-] ";
                 if (amount > 0) cell += ` $${amount}`;
                 return cell;
             });
@@ -218,7 +228,7 @@ const Reports = () => {
     return (
         <div className="reports-page" style={{ padding: '0 5px' }}>
             <header className="card flex justify-between align-center responsive-header" style={{ marginBottom: '25px', padding: '20px' }}>
-                <div className="flex align-center gap-15 flex-wrap">
+                <div className="flex align-center gap-15 flex-wrap date-selectors">
                     <Calendar size={22} color="#3498db" />
                     <div className="flex gap-10">
                         <select
@@ -237,14 +247,14 @@ const Reports = () => {
                         </select>
                     </div>
                 </div>
-                <div className="flex gap-10">
-                    <button className="btn btn-secondary" onClick={exportToCSV} style={{ padding: '10px 15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="flex gap-15 header-actions">
+                    <div className="month-title">
+                        <p style={{ margin: 0, fontSize: '11px', opacity: 0.5, letterSpacing: '1px', textAlign: 'right' }}>RESUMEN MENSUAL</p>
+                        <h3 style={{ margin: 0, fontSize: '1.2rem', textAlign: 'right' }}>{months[selectedMonth]} {selectedYear}</h3>
+                    </div>
+                    <button className="btn btn-secondary" onClick={exportToCSV} style={{ padding: '10px 15px', display: 'flex', alignItems: 'center', gap: '8px', width: 'fit-content' }}>
                         <Download size={18} /> EXPORTAR BALANCE
                     </button>
-                    <div>
-                        <p style={{ margin: 0, fontSize: '11px', opacity: 0.5, letterSpacing: '1px', textAlign: 'right' }}>RESUMEN MENSUAL</p>
-                        <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{months[selectedMonth]} {selectedYear}</h3>
-                    </div>
                 </div>
             </header>
 
@@ -312,13 +322,16 @@ const Reports = () => {
                             {classBreakdown.map(cls => (
                                 <tr key={cls.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                     <td style={{ padding: '15px' }}>
-                                        <div style={{ fontWeight: 600 }}>{cls.name}</div>
+                                        <div style={{ fontWeight: 600 }} spellCheck="false" autoCorrect="off" autoCapitalize="none">{cls.name}</div>
                                         <div style={{ fontSize: '12px', opacity: 0.5 }}>{cls.day} {cls.time}</div>
                                     </td>
                                     <td>
                                         <div style={{ fontSize: '13px' }}>
                                             {cls.totalAttendances} totales<br />
-                                            <span style={{ fontSize: '11px', opacity: 0.5 }}>{cls.guestAttendances} invitados</span>
+                                            <span style={{ fontSize: '11px', opacity: 0.5 }}>
+                                                {cls.guestAttendances} invitados<br/>
+                                                {cls.recoveryAttendances} recuperas
+                                            </span>
                                         </div>
                                     </td>
                                     <td>${cls.totalIncome.toLocaleString()}</td>
@@ -440,11 +453,41 @@ const Reports = () => {
                                 <p style={{ fontSize: '14px', color: '#2ecc71' }}>¡Todos los alumnos tienen sus pagos al día!</p>
                             </div>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto', paddingRight: '10px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '350px', overflowY: 'auto', paddingRight: '10px' }}>
                                 {pendingReminders.map(s => (
-                                    <div key={s.id} className="flex justify-between align-center" style={{ padding: '8px 12px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '6px', fontSize: '13px' }}>
-                                        <span style={{ fontWeight: '500' }}>{s.name}</span>
-                                        <span style={{ fontSize: '11px', opacity: 0.5 }}>{s.email}</span>
+                                    <div 
+                                        key={s.id} 
+                                        onClick={() => setExpandedDebtor(expandedDebtor === s.id ? null : s.id)}
+                                        className="flex flex-column" 
+                                        style={{ 
+                                            padding: '12px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '8px', 
+                                            fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
+                                            border: expandedDebtor === s.id ? '1px solid rgba(52, 152, 219, 0.4)' : '1px solid transparent'
+                                        }}
+                                    >
+                                        <div className="flex justify-between align-center">
+                                            <span style={{ fontWeight: '600', color: expandedDebtor === s.id ? '#3498db' : 'inherit' }} spellCheck="false" autoCorrect="off" autoCapitalize="none">{s.name}</span>
+                                            <span style={{ fontSize: '11px', opacity: 0.5 }}>{s.email}</span>
+                                        </div>
+                                        
+                                        {expandedDebtor === s.id && s.attendanceDates && (
+                                            <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                <p style={{ margin: 0, fontSize: '10px', opacity: 0.6, color: '#3498db', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                    Asistencias sin pago (este mes):
+                                                </p>
+                                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                    {s.attendanceDates.length > 0 ? (
+                                                        s.attendanceDates.map(date => (
+                                                            <span key={date} style={{ backgroundColor: 'rgba(52, 152, 219, 0.15)', color: '#3498db', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '500' }}>
+                                                                {new Date(date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })}
+                                                            </span>
+                                                        ))
+                                                    ) : (
+                                                        <span style={{ fontSize: '11px', opacity: 0.5 }}>No se encontraron asistencias registradas.</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
