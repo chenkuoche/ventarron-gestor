@@ -16,43 +16,88 @@ async function getStudentsToRemind(db) {
     const now = new Date();
     const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     
-    // 1. Obtener todos los alumnos
-    const studentsSnap = await db.collection('students').get();
-    // 2. Obtener registros de pago y asistencia de este mes
-    const paymentsSnap = await db.collection('attendance_records')
-        .where('date', '>=', `${monthPrefix}-01`)
-        .get();
+    // 1. Obtener alumnos, clases y registros
+    const [studentsSnap, classesSnap, paymentsSnap] = await Promise.all([
+        db.collection('students').get(),
+        db.collection('classes').get(),
+        db.collection('attendance_records').where('date', '>=', `${monthPrefix}-01`).get()
+    ]);
     
+    const students = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const classes = classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     const allRecords = paymentsSnap.docs.map(d => d.data());
 
-    // Identificar quiénes ya pagaron (monto > 0)
-    const paidStudentIds = new Set(allRecords
-        .filter(r => Number(r.paymentAmount) > 0)
-        .map(r => r.studentId));
+    // Mapeo de precios de clases para cálculo rápido
+    const classPricesMap = {};
+    const monthlyPrices = new Set();
+    classes.forEach(c => {
+        classPricesMap[c.id] = {
+            classPrice: Number(c.classPrice || 0),
+            monthlyPrice: Number(c.monthlyPrice || 0),
+            monthly2xsPrice: Number(c.monthly2xsPrice || 0)
+        };
+        if (c.monthlyPrice) monthlyPrices.add(Number(c.monthlyPrice));
+        if (c.monthly2xsPrice) monthlyPrices.add(Number(c.monthly2xsPrice));
+    });
 
-    // Identificar quiénes han asistido al menos una vez este mes (present === true)
-    const attendeeIds = new Set(allRecords
-        .filter(r => r.present === true)
-        .map(r => r.studentId));
+    // Procesar cada alumno para ver si es deudor
+    const pendingStudents = students.filter(s => {
+        if (!s.email || !s.enrolledClasses || s.enrolledClasses.length === 0) return false;
+        if (s.guestClasses && s.guestClasses.length > 0) return false;
 
-    // Filtrar pendientes: Con mail, inscritos en clases, que HAYAN ASISTIDO, que no hayan pagado y que no sean invitados
-    const pendingStudents = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(s => 
-            s.email && 
-            (s.enrolledClasses && s.enrolledClasses.length > 0) &&
-            attendeeIds.has(s.id) &&
-            !paidStudentIds.has(s.id) &&
-            (!s.guestClasses || s.guestClasses.length === 0)
-        );
+        const studentRecords = allRecords.filter(r => r.studentId === s.id);
+        const hasPL = studentRecords.some(r => r.isPL === true);
+        if (hasPL) return false;
 
-    // Mapear con sus fechas de asistencia del mes
-    return pendingStudents.map(s => ({
-        ...s,
-        attendanceDates: allRecords
-            .filter(r => r.studentId === s.id && r.present === true)
-            .map(r => r.date)
-            .sort()
-    }));
+        const attendances = studentRecords.filter(r => r.present === true);
+        if (attendances.length === 0) return false;
+
+        const hasPaidMonthly = studentRecords.some(r => monthlyPrices.has(Number(r.paymentAmount)));
+        if (hasPaidMonthly) return false;
+
+        const hasUnpaidAttendance = attendances.some(r => Number(r.paymentAmount) <= 0);
+        return hasUnpaidAttendance;
+    });
+
+    // Mapear con datos detallados para el mail
+    return pendingStudents.map(s => {
+        const studentRecords = allRecords.filter(r => r.studentId === s.id);
+        const unpaidAttendances = studentRecords.filter(r => r.present === true && Number(r.paymentAmount) <= 0);
+        
+        let totalOwed = 0;
+        let isFullMonthly = false;
+
+        // Si el alumno está anotado en grupos, verificamos si su deuda total alcanza una mensualidad
+        // o si simplemente sumamos por clase suelta. 
+        // Por simplicidad para el usuario, si no pagó la mensualidad, calculamos la suma de las clases que asistió.
+        unpaidAttendances.forEach(r => {
+            const prices = classPricesMap[r.classId];
+            if (prices) {
+                totalOwed += prices.classPrice;
+            }
+        });
+
+        // Caso especial: Si la suma de clases sueltas supera o iguala la mensualidad más barata que debería pagar,
+        // sugerimos el monto de la mensualidad en su lugar (si es beneficioso para el alumno).
+        const firstClass = s.enrolledClasses[0];
+        const studentMonthlyPrice = s.enrolledClasses.length > 1 
+            ? classPricesMap[firstClass]?.monthly2xsPrice 
+            : classPricesMap[firstClass]?.monthlyPrice;
+
+        if (studentMonthlyPrice && totalOwed >= studentMonthlyPrice) {
+            totalOwed = studentMonthlyPrice;
+            isFullMonthly = true;
+        }
+
+        return {
+            id: s.id,
+            name: s.name,
+            email: s.email,
+            attendanceDates: unpaidAttendances.map(r => r.date).sort(),
+            totalOwed,
+            isFullMonthly
+        };
+    });
 }
 
 
@@ -106,11 +151,25 @@ exports.sendMonthlyReminders = onSchedule({
 
         for (const student of pendingStudents) {
             try {
+                const datesFormatted = student.attendanceDates.map(d => {
+                    const dObj = new Date(d + 'T12:00:00');
+                    return dObj.toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' });
+                }).join(', ');
+
+                let debtMessage = "";
+                if (student.isFullMonthly) {
+                    debtMessage = `recordarte que el pago de la mensualidad se debe efectuar antes del <strong>día 10 de cada mes</strong>. El monto pendiente es de <strong>$${student.totalOwed}</strong>.`;
+                } else {
+                    const classWord = student.attendanceDates.length > 1 ? 'las clases' : 'la clase';
+                    const dateWord = student.attendanceDates.length > 1 ? 'de los días' : 'del día';
+                    debtMessage = `recordarte que tienes pendiente el pago de <strong>$${student.totalOwed}</strong> por ${classWord} ${dateWord} <strong>${datesFormatted}</strong>.`;
+                }
+
                 await resend.emails.send({
                     from: "Ventarrón <info@escueladetangoventarron.com>",
                     to: [student.email],
                     reply_to: "escueladetangoventarron@gmail.com",
-                    subject: "Recordatorio de Mensualidad - Ventarrón",
+                    subject: "Recordatorio de Pago - Ventarrón",
                     html: `
                         <div style="font-family: sans-serif; color: #2c3e50; line-height: 1.6; max-width: 500px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 10px;">
                             <div style="text-align: center; margin-bottom: 25px;">
@@ -118,7 +177,7 @@ exports.sendMonthlyReminders = onSchedule({
                             </div>
                             <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;"/>
                             <p>Hola <strong>${student.name}</strong>,</p>
-                            <p>Te enviamos este mensajito para recordarte que el pago de la mensualidad se debe efectuar antes del <strong>día 10 de cada mes</strong>.</p>
+                            <p>Te enviamos este mensajito para ${debtMessage}</p>
                             <p>Muchas gracias por elegirnos y por compartir el baile con nosotros.</p>
                             <br/>
                             <p style="text-align: center; font-style: italic;">¡Nos vemos en pista! 💃✨</p>
@@ -200,7 +259,9 @@ exports.getPendingReminders = onCall({
                 id: s.id, 
                 name: s.name, 
                 email: s.email,
-                attendanceDates: s.attendanceDates 
+                attendanceDates: s.attendanceDates,
+                totalOwed: s.totalOwed,
+                isFullMonthly: s.isFullMonthly 
             })) 
         };
     } catch (err) {
@@ -225,11 +286,25 @@ exports.triggerManualReminders = onCall({
 
         for (const student of pending) {
             try {
+                const datesFormatted = student.attendanceDates.map(d => {
+                    const dObj = new Date(d + 'T12:00:00');
+                    return dObj.toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' });
+                }).join(', ');
+
+                let debtMessage = "";
+                if (student.isFullMonthly) {
+                    debtMessage = `recordarte que el pago de la mensualidad se debe efectuar antes del <strong>día 10 de cada mes</strong>. El monto pendiente es de <strong>$${student.totalOwed}</strong>.`;
+                } else {
+                    const classWord = student.attendanceDates.length > 1 ? 'las clases' : 'la clase';
+                    const dateWord = student.attendanceDates.length > 1 ? 'de los días' : 'del día';
+                    debtMessage = `recordarte que tienes pendiente el pago de <strong>$${student.totalOwed}</strong> por ${classWord} ${dateWord} <strong>${datesFormatted}</strong>.`;
+                }
+
                 await resend.emails.send({
                     from: "Ventarrón <info@escueladetangoventarron.com>",
                     to: [student.email],
                     reply_to: "escueladetangoventarron@gmail.com",
-                    subject: "Recordatorio de Mensualidad - Ventarrón",
+                    subject: "Recordatorio de Pago - Ventarrón",
                     html: `
                         <div style="font-family: sans-serif; color: #2c3e50; line-height: 1.6; max-width: 500px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 10px;">
                             <div style="text-align: center; margin-bottom: 25px;">
@@ -237,7 +312,7 @@ exports.triggerManualReminders = onCall({
                             </div>
                             <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;"/>
                             <p>Hola <strong>${student.name}</strong>,</p>
-                            <p>Te enviamos este mensajito para recordarte que el pago de la mensualidad se debe efectuar antes del <strong>día 10 de cada mes</strong>.</p>
+                            <p>Te enviamos este mensajito para ${debtMessage}</p>
                             <p>Muchas gracias por elegirnos y por compartir el baile con nosotros.</p>
                             <br/>
                             <p style="text-align: center; font-style: italic;">¡Nos vemos en pista! 💃✨</p>
@@ -307,6 +382,43 @@ exports.sendMonthlyReport = onSchedule({
             'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado'
         };
 
+        const monthlyPriceLevels = new Set();
+        classes.forEach(c => {
+            if (c.monthlyPrice) monthlyPriceLevels.add(Number(c.monthlyPrice));
+            if (c.monthly2xsPrice) monthlyPriceLevels.add(Number(c.monthly2xsPrice));
+        });
+
+        const classIncomeMap = {};
+        classes.forEach(c => {
+            classIncomeMap[c.id] = { total: 0, cash: 0, transfer: 0 };
+        });
+
+        records.forEach(r => {
+            const amount = parseFloat(r.paymentAmount) || 0;
+            if (amount <= 0) return;
+
+            const isMonthly = monthlyPriceLevels.has(amount);
+            const student = students.find(s => s.id === r.studentId);
+            const enrolled = student?.enrolledClasses || [];
+
+            if (isMonthly && enrolled.length > 0) {
+                const share = amount / enrolled.length;
+                enrolled.forEach(cid => {
+                    if (classIncomeMap[cid]) {
+                        classIncomeMap[cid].total += share;
+                        if (r.paymentMethod === 'cash') classIncomeMap[cid].cash += share;
+                        else if (r.paymentMethod === 'transfer') classIncomeMap[cid].transfer += share;
+                    }
+                });
+            } else {
+                if (classIncomeMap[r.classId]) {
+                    classIncomeMap[r.classId].total += amount;
+                    if (r.paymentMethod === 'cash') classIncomeMap[r.classId].cash += amount;
+                    else if (r.paymentMethod === 'transfer') classIncomeMap[r.classId].transfer += amount;
+                }
+            }
+        });
+
         // 3. Replicar lógica de cálculo de Reports.jsx
         const classBreakdown = classes.map(cls => {
             let classRecords = records.filter(r => r.classId === cls.id);
@@ -319,13 +431,10 @@ exports.sendMonthlyReport = onSchedule({
                 return dayOfWeekMap[dNameEn] === cls.day;
             });
 
-            const totalIncome = classRecords.reduce((acc, r) => acc + (parseFloat(r.paymentAmount) || 0), 0);
-            const cashIncome = classRecords
-                .filter(r => r.paymentMethod === 'cash')
-                .reduce((acc, r) => acc + (parseFloat(r.paymentAmount) || 0), 0);
-            const transferIncome = classRecords
-                .filter(r => r.paymentMethod === 'transfer')
-                .reduce((acc, r) => acc + (parseFloat(r.paymentAmount) || 0), 0);
+            const incomeFromMap = classIncomeMap[cls.id] || { total: 0, cash: 0, transfer: 0 };
+            const totalIncome = incomeFromMap.total;
+            const cashIncome = incomeFromMap.cash;
+            const transferIncome = incomeFromMap.transfer;
 
             const totalAttendances = classRecords.filter(r => r.present).length;
             const datesWithNoClass = new Set(classRecords.filter(r => r.studentId === 'NO_CLASS').map(r => r.date));

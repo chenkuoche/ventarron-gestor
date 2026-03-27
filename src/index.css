@@ -13,13 +13,43 @@
   --warning: #f1c40f;
   --danger: #e74c3c;
   --sidebar-width: 260px;
-  --font-main: 'Outfit', sans-serif;
+  --font-main: 'Outfit', sans-serif; /* v1.8.1 */
 }
 
 * {
-  box-sizing: border-box;
   margin: 0;
   padding: 0;
+  box-sizing: border-box !important;
+  min-width: 0;
+}
+
+.no-underline, .no-underline * {
+  text-decoration: none !important;
+  border-bottom: none !important;
+}
+
+.mobile-form-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 15px;
+}
+
+.mobile-form-row > div {
+  flex: 1 1 150px;
+  min-width: 0;
+  width: 100%;
+}
+
+@media (max-width: 600px) {
+  .mobile-form-row {
+    flex-direction: column !important;
+    gap: 15px !important;
+  }
+  .mobile-form-row > div {
+    width: 100% !important;
+    flex: none !important;
+  }
 }
 
 body {
@@ -133,6 +163,19 @@ h3 {
   margin: 0 auto;
   padding: 40px;
   width: 100%;
+  box-sizing: border-box;
+}
+
+.page-header {
+  padding: 0 40px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    padding: 0 20px;
+  }
 }
 
 .card {
@@ -141,6 +184,38 @@ h3 {
   border: 1px solid var(--border-color);
   border-radius: 16px;
   margin-bottom: 24px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+input, select, textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+input[type="time"] {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.students-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 30px;
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .students-grid {
+    grid-template-columns: 1.2fr 1fr;
+  }
 }
 
 .flex {
@@ -159,8 +234,8 @@ h3 {
   align-items: center;
 }
 
-.gap-10 {
-  gap: 10px;
+.gap-15 {
+  gap: 15px;
 }
 
 .gap-20 {
@@ -280,9 +355,73 @@ tr:hover td {
     padding: 0 20px !important;
   }
 
+  @media (max-width: 480px) {
+    .student-enroll-row {
+      flex-direction: column !important;
+      align-items: flex-start !important;
+    }
+  }
+
   /* Adjust grid for mobile */
   div[style*="grid-template-columns: 1fr 2fr"],
   div[style*="grid-template-columns: 1.5fr 1fr"] {
     grid-template-columns: 1fr !important;
+  }
+
+  /* Fix Students.jsx flex wrap and minWidth */
+  .students-grid {
+    grid-template-columns: 1fr !important;
+    gap: 15px !important;
+    width: 100% !important;
+  }
+
+  .card {
+    padding: 15px !important;
+  }
+
+  .card-header-responsive {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .card-header-responsive > div {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Attendance Table Mobile Cards */
+  .attendance-table,
+  .attendance-table tbody,
+  .attendance-table tr,
+  .attendance-table td {
+    display: block;
+    width: 100%;
+  }
+  .attendance-table thead {
+    display: none;
+  }
+  .attendance-table tr {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 25px;
+    padding: 15px !important;
+  }
+  .attendance-table td {
+    padding: 0 !important;
+    border: none;
+    margin-bottom: 12px;
+  }
+  .attendance-table td:last-child {
+    margin-bottom: 0;
+  }
+  .attendance-header {
+    position: relative !important;
+    top: 0 !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 15px !important;
+    gap: 15px !important;
   }
 }

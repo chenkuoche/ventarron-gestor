@@ -37,6 +37,44 @@ const Reports = () => {
 
     const currentMonthRecords = records.filter(r => r.date && r.date.startsWith(yearMonth));
 
+    // Identificar niveles de montos que corresponden a mensualidades
+    const monthlyPriceLevels = new Set();
+    classes.forEach(c => {
+        if (c.monthlyPrice) monthlyPriceLevels.add(Number(c.monthlyPrice));
+        if (c.monthly2xsPrice) monthlyPriceLevels.add(Number(c.monthly2xsPrice));
+    });
+
+    const classIncomeMap = {};
+    classes.forEach(c => {
+        classIncomeMap[c.id] = { total: 0, cash: 0, transfer: 0 };
+    });
+
+    currentMonthRecords.forEach(r => {
+        const amount = parseFloat(r.paymentAmount) || 0;
+        if (amount <= 0) return;
+
+        const isMonthly = monthlyPriceLevels.has(amount);
+        const student = students.find(s => s.id === r.studentId);
+        const enrolled = student?.enrolledClasses || [];
+
+        if (isMonthly && enrolled.length > 0) {
+            const share = amount / enrolled.length;
+            enrolled.forEach(cid => {
+                if (classIncomeMap[cid]) {
+                    classIncomeMap[cid].total += share;
+                    if (r.paymentMethod === 'cash') classIncomeMap[cid].cash += share;
+                    else if (r.paymentMethod === 'transfer') classIncomeMap[cid].transfer += share;
+                }
+            });
+        } else {
+            if (classIncomeMap[r.classId]) {
+                classIncomeMap[r.classId].total += amount;
+                if (r.paymentMethod === 'cash') classIncomeMap[r.classId].cash += amount;
+                else if (r.paymentMethod === 'transfer') classIncomeMap[r.classId].transfer += amount;
+            }
+        }
+    });
+
     // Calculate stats by Class
     const classBreakdown = classes.map(cls => {
         let classRecords = currentMonthRecords.filter(r => r.classId === cls.id);
@@ -47,34 +85,26 @@ const Reports = () => {
         };
 
         // Filtramos estrictamente para que solo cuenten registros que coincidan con el día programado de la clase
-        // Esto ignora errores accidentales de marcar asistencia en el día equivocado.
         classRecords = classRecords.filter(r => {
-            if (r.studentId === 'NO_CLASS') return true; // Mantener marcas de "Sin Clase"
+            if (r.studentId === 'NO_CLASS') return true; 
             const dObj = new Date(r.date + 'T12:00:00');
             const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
             return dayOfWeekMap[dNameEn] === cls.day;
         });
 
-        const totalIncome = classRecords.reduce((acc, r) => acc + (parseFloat(r.paymentAmount) || 0), 0);
-        const cashIncome = classRecords
-            .filter(r => r.paymentMethod === 'cash')
-            .reduce((acc, r) => acc + (parseFloat(r.paymentAmount) || 0), 0);
-        const transferIncome = classRecords
-            .filter(r => r.paymentMethod === 'transfer')
-            .reduce((acc, r) => acc + (parseFloat(r.paymentAmount) || 0), 0);
+        const incomeFromMap = classIncomeMap[cls.id] || { total: 0, cash: 0, transfer: 0 };
+        const totalIncome = incomeFromMap.total;
+        const cashIncome = incomeFromMap.cash;
+        const transferIncome = incomeFromMap.transfer;
 
         // Attendance stats
         const totalAttendances = classRecords.filter(r => r.present).length;
         const guestAttendances = classRecords.filter(r => r.present && r.isGuest).length;
         const recoveryAttendances = classRecords.filter(r => r.present && r.isRecovery).length;
+        const plAttendances = classRecords.filter(r => r.present && r.isPL).length;
         
-        // Excluimos las fechas marcadas explícitamente como "NO_CLASS"
         const datesWithNoClass = new Set(classRecords.filter(r => r.studentId === 'NO_CLASS').map(r => r.date));
-        
-        const sessionDates = [...new Set(classRecords.filter(r => {
-            return r.studentId !== 'NO_CLASS' && !datesWithNoClass.has(r.date);
-        }).map(r => r.date))].sort();
-        
+        const sessionDates = [...new Set(classRecords.filter(r => r.studentId !== 'NO_CLASS' && !datesWithNoClass.has(r.date)).map(r => r.date))].sort();
         const sessionsHeld = sessionDates.length;
 
         const totalRent = sessionsHeld * (cls.rent || 0);
@@ -93,7 +123,8 @@ const Reports = () => {
             userProfit,
             totalAttendances,
             guestAttendances,
-            recoveryAttendances
+            recoveryAttendances,
+            plAttendances
         };
     });
 
@@ -161,34 +192,53 @@ const Reports = () => {
         const relevantStudentIds = [...new Set(classRecords.filter(r => r.studentId !== 'NO_CLASS').map(r => r.studentId))];
         const relevantStudents = relevantStudentIds.map(id => students.find(s => s.id === id)).filter(Boolean).sort((a,b) => a.name.localeCompare(b.name));
 
-        const headers = ["Alumno", ...classDates.map(d => new Date(d + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })), "Total Pagado"];
+        const headers = ["Alumno", ...classDates.map(d => new Date(d + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })), "Pagado en este grupo", "TOTAL ASIGNADO"];
         
         const rows = relevantStudents.map(student => {
-            let studentTotal = 0;
+            let studentLocalTotal = 0;
             const columns = classDates.map(date => {
                 const rec = classRecords.find(r => r.studentId === student.id && r.date === date);
                 if (!rec) return "-";
                 
                 const amount = parseFloat(rec.paymentAmount) || 0;
-                studentTotal += amount;
+                studentLocalTotal += amount;
                 
                 let mark = "A";
-                if (rec.isGuest) {
-                    mark = "INV";
-                } else if (rec.isRecovery || !(student.enrolledClasses || []).includes(clsId)) {
-                    mark = "R";
-                }
+                if (rec.isGuest) mark = "INV";
+                else if (rec.isRecovery || !(student.enrolledClasses || []).includes(clsId)) mark = "R";
                 
                 let cell = rec.present ? `[${mark}]` : "[-] ";
                 if (amount > 0) cell += ` $${amount}`;
                 return cell;
             });
-            return [student.name, ...columns, `$${studentTotal}`];
+
+            // Calcular cuánto de las mensualidades del alumno corresponden a ESTA clase
+            const studentAllRecords = currentMonthRecords.filter(r => r.studentId === student.id);
+            let totalAssignedToThisClass = 0;
+
+            studentAllRecords.forEach(r => {
+                const amount = parseFloat(r.paymentAmount) || 0;
+                if (amount <= 0) return;
+
+                const isMonthly = monthlyPriceLevels.has(amount);
+                const enrolled = student?.enrolledClasses || [];
+
+                if (isMonthly && enrolled.length > 0) {
+                    if (enrolled.includes(clsId)) {
+                        totalAssignedToThisClass += amount / enrolled.length;
+                    }
+                } else if (r.classId === clsId) {
+                    // Pago individual en esta clase
+                    totalAssignedToThisClass += amount;
+                }
+            });
+
+            return [student.name, ...columns, `$${studentLocalTotal}`, `$${Math.round(totalAssignedToThisClass)}` + (studentLocalTotal !== totalAssignedToThisClass ? " (*)" : "")];
         });
 
         // Cálculos de resumen financiero para esta clase
         const clsSummary = classBreakdown.find(c => c.id === clsId);
-        const totalIncomeLabel = `Total Ingresos:,$${clsSummary.totalIncome}`;
+        const totalIncomeLabel = `Total Ingresos Asignados (Prorrateo):,$${clsSummary.totalIncome}`;
         const totalRentLabel = `Alquiler (${clsSummary.sessionsHeld} días):,$${clsSummary.totalRent}`;
         const profitToSplitLabel = `Ganancia a repartir:,$${clsSummary.profitBeforeSplit}`;
         
@@ -203,6 +253,7 @@ const Reports = () => {
 
         const csvContent = [
             [`Detalle de Asistencia y Pagos - ${cls.name}`, `${months[selectedMonth]} ${selectedYear}`].join(","),
+            [`Ingreso Total (Redistribuido): $${clsSummary.totalIncome}`, `(*) El monto asignado considera el reparto de pases libres y mensualidades entre grupos.`].join(","),
             [],
             headers.join(","),
             ...rows.map(row => row.join(",")),
@@ -288,7 +339,7 @@ const Reports = () => {
                         <DollarSign size={18} opacity={0.3} />
                     </div>
                     <h2 style={{ margin: 0, color: '#2ecc71' }}>${totalUserProfit.toLocaleString()}</h2>
-                    <p style={{ margin: '8px 0 0', fontSize: '11px', opacity: 0.5 }}>Fueran socios o alquiler.</p>
+                    <p style={{ margin: '8px 0 0', fontSize: '11px', opacity: 0.5 }}>Monto neto tras descontar alquiler y socios.</p>
                 </div>
 
                 <div className="card shadow-sm" style={{ borderTop: '4px solid #f1c40f', marginBottom: 0 }}>
@@ -326,15 +377,17 @@ const Reports = () => {
                                         <div style={{ fontSize: '12px', opacity: 0.5 }}>{cls.day} {cls.time}</div>
                                     </td>
                                     <td>
-                                        <div style={{ fontSize: '13px' }}>
-                                            {cls.totalAttendances} totales<br />
-                                            <span style={{ fontSize: '11px', opacity: 0.5 }}>
-                                                {cls.guestAttendances} invitados<br/>
-                                                {cls.recoveryAttendances} recuperas
-                                            </span>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                            <div style={{ fontSize: '12px' }}>{cls.totalAttendances} asistentes</div>
+                                            <div style={{ fontSize: '9px', opacity: 0.5 }}>({cls.guestAttendances} Inv / {cls.recoveryAttendances} Rec / {cls.plAttendances} PL)</div>
                                         </div>
                                     </td>
-                                    <td>${cls.totalIncome.toLocaleString()}</td>
+                                    <td>
+                                        <div style={{ fontSize: '14px', fontWeight: 'bold' }}>${cls.totalIncome.toLocaleString()}</div>
+                                        <div style={{ fontSize: '9px', opacity: 0.5 }}>
+                                            Efe: ${cls.cashIncome.toLocaleString()} | Trf: ${cls.transferIncome.toLocaleString()}
+                                        </div>
+                                    </td>
                                     <td style={{ textAlign: 'center' }}>
                                         ${cls.totalRent.toLocaleString()}<br/>
                                         <div style={{ fontSize: '9px', opacity: 0.5, marginTop: '4px' }}>

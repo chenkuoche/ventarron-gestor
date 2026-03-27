@@ -38,12 +38,12 @@ const Classes = () => {
         setFormData({ name: '', day: 'Martes', time: '19:00', endTime: '20:30', profitSplit: 1, rent: 0, classPrice: 800, monthlyPrice: 3000, monthly2xsPrice: 4500 });
     };
 
-    const rowStyle = { display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '10px' };
-    const fieldStyle = { flex: '1 1 140px', minWidth: '140px' };
+    const rowStyle = { display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '15px' };
+    const fieldStyle = { flex: '1 1 160px', minWidth: '160px' };
 
     return (
         <div className="classes-page">
-            <div className="flex-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '30px' }}>
+            <div className="flex-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '30px' }}>
                 {/* Form to Add/Edit */}
                 <div className="card" style={{
                     height: 'fit-content',
@@ -70,8 +70,8 @@ const Classes = () => {
                             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         />
 
-                        <div style={rowStyle}>
-                            <div style={fieldStyle}>
+                        <div className="mobile-form-row">
+                            <div style={{ width: '100%', maxWidth: '100%' }}>
                                 <label>Día</label>
                                 <select
                                     value={formData.day}
@@ -82,7 +82,7 @@ const Classes = () => {
                                     ))}
                                 </select>
                             </div>
-                            <div style={fieldStyle}>
+                            <div style={{ width: '100%', maxWidth: '100%' }}>
                                 <label>Hora Inicio</label>
                                 <input
                                     type="time"
@@ -92,8 +92,8 @@ const Classes = () => {
                             </div>
                         </div>
 
-                        <div style={rowStyle}>
-                            <div style={fieldStyle}>
+                        <div className="mobile-form-row">
+                            <div style={{ width: '100%', maxWidth: '100%' }}>
                                 <label>Hora Fin</label>
                                 <input
                                     type="time"
@@ -101,7 +101,7 @@ const Classes = () => {
                                     onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
                                 />
                             </div>
-                            <div style={fieldStyle}>
+                            <div style={{ width: '100%', maxWidth: '100%' }}>
                                 <label>Alquiler / clase ($)</label>
                                 <input
                                     type="number"

@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { UserPlus, Search, Edit2, Trash2, Mail, Phone, XCircle } from 'lucide-react';
+import { UserPlus, Search, Edit2, Trash2, Mail, Phone, XCircle, Calendar, History, PlusCircle, MessageCircle, CheckCircle } from 'lucide-react';
 
 const Students = () => {
-    const { students, addStudent, deleteStudent, updateStudent, classes } = useAppContext();
+    const { students, addStudent, deleteStudent, updateStudent, classes, records, markWAReceiptSent, markWAReminderSent } = useAppContext();
     const [searchTerm, setSearchTerm] = useState('');
     const [isEditing, setIsEditing] = useState(null);
+    const [viewHistory, setViewHistory] = useState(null);
+    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const [formData, setFormData] = useState({ name: '', phone: '', email: '', enrolledClasses: [], guestClasses: [] });
 
     const handleSubmit = (e) => {
@@ -65,15 +67,57 @@ const Students = () => {
         });
     };
 
+    const handleSendWA = (student, type, data = {}) => {
+        const phoneRaw = student.phone || '';
+        const phone = phoneRaw.replace(/\D/g, '');
+        if (!phone) {
+            alert("Este alumno no tiene teléfono registrado.");
+            return;
+        }
+
+        const currentMonthName = months[new Date().getMonth()];
+        const selClass = classes.find(c => (student.enrolledClasses || []).includes(c.id));
+
+        let text = "";
+        if (type === 'debt') {
+            const price = selClass ? ((student.enrolledClasses || []).length > 1 ? selClass.monthly2xsPrice : selClass.monthlyPrice) : "---";
+            text = `Hola ${student.name}!\n\n¿Cómo estás? Te escribimos de Ventarrón para recordarte que el saldo del mes de ${currentMonthName} para la clase de ${selClass?.name || 'tango'} quedó pendiente ($${price}).\n\nSi ya transferiste, por favor envíanos el comprobante.\n\n¡Nos vemos en pista!`;
+        } else if (type === 'receipt') {
+            const amount = Number(data.amount);
+            let concept = "";
+            const recClass = classes.find(c => c.id === data.classId) || selClass;
+            if (recClass) {
+                if (amount === Number(recClass.monthlyPrice)) concept = "la mensualidad correspondiente a una clase semanal";
+                else if (amount === Number(recClass.monthly2xsPrice)) concept = "la mensualidad correspondiente a dos clases semanales";
+                else concept = `la clase del día ${new Date(data.date + 'T12:00:00').toLocaleDateString('es-UY')}`;
+            } else {
+                concept = "tus clases de tango";
+            }
+            text = `Hola ${student.name}!\n\nRecibimos correctamente tu pago de $${amount} por concepto de ${concept}.\n\n¡Muchas gracias por elegirnos y nos vemos pronto!`;
+        }
+
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+
+        // Marcar como enviado si corresponde
+        if (type === 'debt') {
+            markWAReminderSent(student.id);
+            if (viewHistory && viewHistory.id === student.id) {
+                setViewHistory(prev => ({ ...prev, waReminderSentAt: new Date().toISOString() }));
+            }
+        } else if (type === 'receipt' && data.date) {
+            markWAReceiptSent(data.date, data.classId || selClass?.id, student.id);
+        }
+    };
+
     const filteredStudents = students.filter(s =>
         s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.phone.includes(searchTerm)
+        (s.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (s.phone || '').includes(searchTerm)
     );
 
     return (
         <div className="students-page">
-            <div className="flex-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '30px' }}>
+            <div className="students-grid">
                 {/* Form to Add/Edit */}
                 <div className="card" style={{
                     height: 'fit-content',
@@ -125,20 +169,21 @@ const Students = () => {
                                 const isEnrolled = (formData.enrolledClasses || []).includes(cls.id);
                                 const isGuest = (formData.guestClasses || []).includes(cls.id);
                                 return (
-                                    <div key={cls.id} className="flex align-center justify-between" style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', flexWrap: 'wrap', gap: '10px' }}>
-                                        <span style={{ fontSize: '13px', color: (isEnrolled || isGuest) ? 'white' : 'rgba(255,255,255,0.4)', flex: 1, minWidth: '120px' }}>
+                                    <div key={cls.id} className="student-enroll-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', gap: '10px' }}>
+                                        <span style={{ fontSize: '13px', color: (isEnrolled || isGuest) ? 'white' : 'rgba(255,255,255,0.4)', flex: 1, minWidth: '140px' }}>
                                             {cls.name}
                                         </span>
-                                        <div className="flex gap-5">
+                                        <div className="flex gap-10">
                                             <button 
                                                 type="button"
                                                 onClick={() => toggleClass(cls.id, 'regular')}
                                                 style={{ 
-                                                    padding: '5px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid',
+                                                    padding: '6px 12px', fontSize: '11px', borderRadius: '4px', border: '1px solid',
                                                     backgroundColor: isEnrolled ? '#3498db' : 'transparent',
                                                     borderColor: isEnrolled ? '#3498db' : 'rgba(255,255,255,0.1)',
                                                     color: isEnrolled ? 'white' : 'rgba(255,255,255,0.5)',
-                                                    cursor: 'pointer'
+                                                    cursor: 'pointer',
+                                                    minWidth: '70px'
                                                 }}
                                             >
                                                 GRUPO
@@ -147,11 +192,12 @@ const Students = () => {
                                                 type="button"
                                                 onClick={() => toggleClass(cls.id, 'guest')}
                                                 style={{ 
-                                                    padding: '5px 10px', fontSize: '11px', borderRadius: '4px', border: '1px solid',
+                                                    padding: '6px 12px', fontSize: '11px', borderRadius: '4px', border: '1px solid',
                                                     backgroundColor: isGuest ? '#f1c40f' : 'transparent',
                                                     borderColor: isGuest ? '#f1c40f' : 'rgba(255,255,255,0.1)',
                                                     color: isGuest ? 'black' : 'rgba(255,255,255,0.5)',
-                                                    cursor: 'pointer'
+                                                    cursor: 'pointer',
+                                                    minWidth: '70px'
                                                 }}
                                             >
                                                 INVITADO
@@ -174,9 +220,9 @@ const Students = () => {
 
                 {/* List of Students */}
                 <div className="card" style={{ flex: 1, padding: '15px' }}>
-                    <div className="flex justify-between align-center" style={{ marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
-                        <h3 style={{ fontSize: '1.2rem', margin: 0 }}>Listado de Alumnos</h3>
-                        <div style={{ position: 'relative', width: '100%', maxWidth: '250px' }}>
+                    <div className="card-header-responsive" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+                        <h3 style={{ margin: 0, flex: '1 0 100%', marginBottom: '10px' }}>Listado de Alumnos</h3>
+                        <div style={{ position: 'relative', flex: '1', minWidth: '150px', maxWidth: '100%' }}>
                             <Search size={16} style={{ position: 'absolute', left: '12px', top: '14px', opacity: 0.5 }} />
                             <input
                                 type="text"
@@ -189,99 +235,66 @@ const Students = () => {
                         </div>
                     </div>
 
-                    <div className="table-wrapper" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                        <table style={{ minWidth: '500px' }}>
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                        <table style={{ minWidth: '500px', tableLayout: 'fixed', width: '100%' }}>
                             <thead>
                                 <tr>
-                                    <th style={{ padding: '10px' }}>Nombre</th>
-                                    <th style={{ padding: '10px' }}>Clases</th>
-                                    <th style={{ padding: '10px' }}>Cel</th>
-                                    <th style={{ padding: '10px', textAlign: 'center' }}>Acción</th>
+                                    <th style={{ padding: '10px' }}>Alumno / Email</th>
+                                    <th style={{ padding: '10px' }}>Grupos</th>
+                                    <th style={{ padding: '10px', textAlign: 'center', minWidth: '100px' }}>Acción</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredStudents.map(student => (
                                     <tr key={student.id} style={{ backgroundColor: isEditing === student.id ? 'rgba(52, 152, 219, 0.1)' : 'transparent' }}>
-                                        <td style={{ fontWeight: 600, fontSize: '13px', padding: '10px' }}>{student.name}</td>
+                                        <td 
+                                            style={{ padding: '15px 10px', cursor: 'pointer' }}
+                                            onClick={() => setViewHistory(student)}
+                                        >
+                                            <div className="no-underline" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                <span style={{ fontWeight: 600, fontSize: '16px', color: '#fff', textDecoration: 'none' }}>{student.name}</span>
+                                                {student.email && <span style={{ fontSize: '12px', opacity: 0.4, textDecoration: 'none' }}>{student.email}</span>}
+                                            </div>
+                                        </td>
                                         <td style={{ padding: '10px' }}>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
                                                 {(student.enrolledClasses || []).map(id => {
-                                                    const cls = classes.find(c => c.id === id);
-                                                    if (!cls) return null;
-
-                                                    let badgeStyle = {
-                                                        fontSize: '9px',
-                                                        padding: '2px 6px',
-                                                        borderRadius: '3px',
-                                                        fontWeight: '500',
-                                                        display: 'inline-block',
-                                                        width: 'fit-content'
-                                                    };
-
-                                                    const day = (cls.day || '').toLowerCase();
-                                                    if (day.includes('martes')) {
-                                                        const isLater = (cls.time || '').includes('20') || (cls.time || '').includes('21');
-                                                        badgeStyle.background = isLater ? 'rgba(39, 174, 96, 0.25)' : 'rgba(46, 204, 113, 0.25)';
-                                                        badgeStyle.color = isLater ? '#27ae60' : '#2ecc71';
-                                                    } else if (day.includes('jueves')) {
-                                                        const isLater = (cls.time || '').includes('20') || (cls.time || '').includes('21');
-                                                        badgeStyle.background = isLater ? 'rgba(243, 156, 18, 0.25)' : 'rgba(241, 196, 15, 0.25)';
-                                                        badgeStyle.color = isLater ? '#f39c12' : '#f1c40f';
-                                                    } else {
-                                                        badgeStyle.background = 'rgba(52, 152, 219, 0.2)';
-                                                        badgeStyle.color = '#3498db';
-                                                    }
-
-                                                    return (
-                                                        <span key={id} style={badgeStyle}>
-                                                            {cls.name}
-                                                        </span>
-                                                    );
-                                                })}
-                                                {(student.guestClasses || []).map(id => {
                                                     const cls = classes.find(c => c.id === id);
                                                     if (!cls) return null;
                                                     return (
                                                         <span key={id} style={{
-                                                            fontSize: '9px',
-                                                            padding: '2px 6px',
-                                                            borderRadius: '3px',
-                                                            fontWeight: '700',
-                                                            display: 'inline-block',
-                                                            width: 'fit-content',
-                                                            background: 'rgba(241, 196, 15, 0.15)',
-                                                            color: '#f1c40f',
-                                                            border: '1px solid rgba(241, 196, 15, 0.2)'
+                                                            fontSize: '10px', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold',
+                                                            background: cls.day.toLowerCase().includes('martes') ? 'rgba(46, 204, 113, 0.2)' : 'rgba(241, 196, 15, 0.2)',
+                                                            color: cls.day.toLowerCase().includes('martes') ? '#2ecc71' : '#f1c40f'
                                                         }}>
-                                                            INV: {cls.name}
+                                                            {cls.name}
                                                         </span>
                                                     );
                                                 })}
-                                                {(!student.enrolledClasses || student.enrolledClasses.length === 0) && (!student.guestClasses || student.guestClasses.length === 0) && <span style={{ fontSize: '10px', opacity: 0.3 }}>-</span>}
+                                                {(!student.enrolledClasses || student.enrolledClasses.length === 0) && <span style={{ opacity: 0.2 }}>-</span>}
                                             </div>
                                         </td>
-                                        <td style={{ fontSize: '12px', opacity: 0.8, padding: '10px' }}>
-                                            <div className="flex align-center gap-5">
-                                                <Phone size={12} /> {student.phone.slice(-4)}
-                                            </div>
-                                        </td>
-                                        <td style={{ padding: '10px' }}>
-                                            <div className="flex gap-5 justify-center">
-                                                <button
-                                                    onClick={() => handleEdit(student)}
-                                                    style={{ background: 'none', border: 'none', color: '#3498db', cursor: 'pointer', padding: '5px' }}
-                                                >
-                                                    <Edit2 size={16} />
+                                        <td style={{ padding: '15px 5px', textAlign: 'center' }}>
+                                            <div style={{ display: 'flex', gap: '18px', alignItems: 'center', justifyContent: 'center', minWidth: '120px' }}>
+                                                {student.phone && (
+                                                    <a 
+                                                        href={`https://wa.me/${student.phone.replace(/\D/g, '')}`} 
+                                                        target="_blank" rel="noopener noreferrer" 
+                                                        style={{ color: '#2ecc71', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                    >
+                                                        <MessageCircle size={22} />
+                                                    </a>
+                                                )}
+                                                <button onClick={() => handleEdit(student)} style={{ background: 'none', border: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Edit2 size={20} />
                                                 </button>
                                                 <button
                                                     onClick={() => {
-                                                        if (window.confirm(`¿Estás seguro de ELIMINAR definitivamente a ${student.name}? Esta acción no se puede deshacer.`)) {
-                                                            deleteStudent(student.id);
-                                                        }
+                                                        if (window.confirm(`¿Eliminar a ${student.name}?`)) deleteStudent(student.id);
                                                     }}
-                                                    style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', padding: '5px' }}
+                                                    style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                                 >
-                                                    <Trash2 size={16} />
+                                                    <Trash2 size={20} />
                                                 </button>
                                             </div>
                                         </td>
@@ -289,7 +302,7 @@ const Students = () => {
                                 ))}
                                 {filteredStudents.length === 0 && (
                                     <tr>
-                                        <td colSpan="4" style={{ textAlign: 'center', opacity: 0.5, padding: '40px' }}>
+                                        <td colSpan="3" style={{ textAlign: 'center', opacity: 0.5, padding: '40px' }}>
                                             No se encontraron alumnos.
                                         </td>
                                     </tr>
@@ -299,6 +312,160 @@ const Students = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Modal de Historial */}
+            {viewHistory && (
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(5px)' }}>
+                    <div className="card" style={{ maxWidth: '500px', width: '100%', maxHeight: '85vh', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
+                        <div className="flex justify-between align-center" style={{ marginBottom: '25px', paddingBottom: '15px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div style={{ flex: 1 }}>
+                                <h3 style={{ margin: 0, fontSize: '1.4rem' }}>{viewHistory.name}</h3>
+                                <div style={{ display: 'flex', gap: '15px', marginTop: '5px', opacity: 0.6, fontSize: '12px' }}>
+                                    {viewHistory.phone && (
+                                        <a 
+                                            href={`https://wa.me/${viewHistory.phone.replace(/\D/g, '')}`} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            style={{ color: '#2ecc71', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '500' }}
+                                            title="Enviar WhatsApp"
+                                        >
+                                            <Phone size={12} /> {viewHistory.phone}
+                                        </a>
+                                    )}
+                                    {viewHistory.email && (
+                                        <a 
+                                            href={`mailto:${viewHistory.email}`} 
+                                            style={{ color: '#3498db', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '500' }}
+                                            title="Enviar Correo"
+                                        >
+                                            <Mail size={12} /> {viewHistory.email}
+                                        </a>
+                                    )}
+                                </div>
+                                <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                                    {(() => {
+                                        const currentPrefix = new Date().toISOString().substring(0, 7);
+                                        const isRemSent = viewHistory.waReminderSentAt && viewHistory.waReminderSentAt.startsWith(currentPrefix);
+                                        return (
+                                            <button 
+                                                onClick={() => handleSendWA(viewHistory, 'debt')}
+                                                className="btn" 
+                                                style={{ fontSize: '10px', padding: '6px 12px', backgroundColor: isRemSent ? '#2ecc71' : '#e74c3c', border: 'none', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold' }}
+                                            >
+                                                <MessageCircle size={12} /> {isRemSent ? 'RECORDATORIO ENVIADO' : 'ENVIAR RECORDATORIO (WA)'}
+                                            </button>
+                                        );
+                                    })()}
+                                </div>
+                                <div style={{ marginTop: '15px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                    <p style={{ margin: '0 0 10px 0', fontSize: '10px', opacity: 0.4, letterSpacing: '1px' }}>GESTIÓN DE GRUPOS</p>
+                                    <div className="flex flex-column gap-5">
+                                        {(viewHistory.enrolledClasses || []).map(cid => {
+                                            const cls = classes.find(c => c.id === cid);
+                                            return (
+                                                <div key={cid} className="flex justify-between align-center" style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
+                                                    <span style={{ fontSize: '12px' }}>{cls ? cls.name : 'Clase eliminada'}</span>
+                                                    <button 
+                                                        onClick={() => {
+                                                            if (window.confirm('¿Deseas dar de baja a este alumno de este grupo?')) {
+                                                                const newEnrolled = (viewHistory.enrolledClasses || []).filter(id => id !== cid);
+                                                                updateStudent(viewHistory.id, { enrolledClasses: newEnrolled });
+                                                                setViewHistory({ ...viewHistory, enrolledClasses: newEnrolled });
+                                                            }
+                                                        }} 
+                                                        style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                                                    >QUITAR</button>
+                                                </div>
+                                            );
+                                        })}
+                                        <select 
+                                            onChange={(e) => {
+                                                const newCid = e.target.value;
+                                                if (newCid) {
+                                                    const newEnrolled = [...(viewHistory.enrolledClasses || []), newCid];
+                                                    updateStudent(viewHistory.id, { enrolledClasses: newEnrolled });
+                                                    setViewHistory({ ...viewHistory, enrolledClasses: newEnrolled });
+                                                }
+                                            }} 
+                                            style={{ marginTop: '8px', fontSize: '11px', height: '32px', marginBottom: 0, padding: '0 10px' }}
+                                            value=""
+                                        >
+                                            <option value="">+ Cambiar / Agregar a grupo...</option>
+                                            {classes.filter(c => !(viewHistory.enrolledClasses || []).includes(c.id)).map(c => (
+                                                <option key={c.id} value={c.id}>{c.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <p style={{ margin: '20px 0 10px 0', fontSize: '11px', opacity: 0.4, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Historial de Asistencias (Mes Actual)</p>
+                            </div>
+                            <button onClick={() => setViewHistory(null)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'white', cursor: 'pointer', padding: '8px', borderRadius: '50%', alignSelf: 'flex-start' }}>
+                                <XCircle size={22} />
+                            </button>
+                        </div>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {(() => {
+                                const currentMonthPrefix = new Date().toISOString().substring(0, 7);
+                                const studentMonthRecords = records.filter(r => r.studentId === viewHistory.id && r.date.startsWith(currentMonthPrefix) && (r.present || (parseFloat(r.paymentAmount) > 0))).sort((a,b) => b.date.localeCompare(a.date));
+                                
+                                if (studentMonthRecords.length === 0) {
+                                    return <p style={{ textAlign: 'center', padding: '30px', opacity: 0.5 }}>No se registraron asistencias este mes.</p>;
+                                }
+
+                                return studentMonthRecords.map(r => {
+                                    const cls = classes.find(c => c.id === r.classId);
+                                    let typeLabel = "REGULAR";
+                                    let typeColor = "#3498db";
+                                    if (r.isGuest) { typeLabel = "INVITADO"; typeColor = "#f1c40f"; }
+                                    else if (r.isRecovery) { typeLabel = "RECUPERA"; typeColor = "#e74c3c"; }
+                                    else if (r.isPL) { typeLabel = "PASE LIBRE"; typeColor = "#9b59b6"; }
+
+                                    return (
+                                        <div key={r.date + r.classId} style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: '12px 15px', borderRadius: '8px', borderLeft: `4px solid ${typeColor}` }}>
+                                            <div className="flex justify-between align-center">
+                                                <span style={{ fontSize: '14px', fontWeight: '600' }}>{new Date(r.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: 'short' })}</span>
+                                                <span style={{ fontSize: '10px', color: typeColor, fontWeight: 'bold', padding: '2px 6px', backgroundColor: `${typeColor}22`, borderRadius: '4px' }}>
+                                                    {r.present ? typeLabel : "PAGO SIN ASIST."}
+                                                </span>
+                                            </div>
+                                            <p style={{ margin: '5px 0 0 0', fontSize: '12px', opacity: 0.7 }}>{cls ? cls.name : 'Clase eliminada'}</p>
+                                            
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '10px' }}>
+                                                {Number(r.paymentAmount) > 0 && (
+                                                    <div style={{ padding: '8px 12px', backgroundColor: 'rgba(46, 204, 113, 0.1)', borderRadius: '6px', border: '1px solid rgba(46, 204, 113, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <div className="flex align-center gap-5">
+                                                            <span style={{ fontSize: '12px', color: '#2ecc71', fontWeight: '700' }}>PAGÓ: ${r.paymentAmount}</span>
+                                                        </div>
+                                                        <div className="flex align-center gap-5">
+                                                            <span style={{ fontSize: '10px', opacity: 0.5, fontWeight: '500', textTransform: 'uppercase' }}>{r.paymentMethod === 'transfer' ? 'Transferencia' : 'Efectivo'}</span>
+                                                            <button 
+                                                                onClick={() => handleSendWA(viewHistory, 'receipt', { amount: r.paymentAmount, date: r.date, classId: r.classId })}
+                                                                style={{ background: r.waReceiptSent ? '#2ecc71' : '#e74c3c', border: 'none', color: 'white', cursor: 'pointer', padding: '6px 10px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10px', fontWeight: 'bold' }}
+                                                                title="Enviar Recibo WA"
+                                                            >
+                                                                <MessageCircle size={12} /> {r.waReceiptSent ? 'RECIBO ENVIADO' : 'ENVIAR RECIBO'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {r.receiptSent && (
+                                                    <div style={{ fontSize: '10px', color: '#2ecc71', opacity: 0.8, display: 'flex', alignCenter: 'center', gap: '5px', marginLeft: '5px' }}>
+                                                        <CheckCircle size={10} /> RECIBO ENVIADO (Mail) {r.receiptSentAt ? `el ${new Date(r.receiptSentAt).toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                });
+                            })()}
+                        </div>
+                        
+                        <button onClick={() => setViewHistory(null)} className="btn btn-secondary" style={{ width: '100%', marginTop: '30px', justifyContent: 'center' }}>CERRAR</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

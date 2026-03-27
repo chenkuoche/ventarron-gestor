@@ -66,20 +66,6 @@ const Dashboard = () => {
                     <h2 style={{ margin: 0, fontSize: '1.6rem' }}>¡Hola, Ventarrón! 🌪️</h2>
                     <p style={{ margin: '5px 0 0', opacity: 0.5, fontSize: '14px' }}>Aquí tienes un resumen de lo que va del mes.</p>
                 </div>
-                <button 
-                    onClick={handleClearDb}
-                    style={{ 
-                        backgroundColor: 'rgba(231, 76, 60, 0.1)', 
-                        color: '#e74c3c', 
-                        border: '1px solid rgba(231, 76, 60, 0.2)', 
-                        padding: '8px 12px', 
-                        borderRadius: '6px', 
-                        fontSize: '10px',
-                        cursor: 'pointer'
-                    }}
-                >
-                    Limpiar Datos
-                </button>
             </header>
 
             <div className="grid-stats" style={{

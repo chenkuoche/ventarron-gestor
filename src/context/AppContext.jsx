@@ -104,10 +104,13 @@ export const AppProvider = ({ children }) => {
   };
 
   const saveAttendanceAndPayment = async (date, classId, studentRecords, idsToDelete = []) => {
-    // 1. Guardar/Actualizar registros
-    const batchPromises = Object.entries(studentRecords).map(async ([studentId, data]) => {
+    const batch = writeBatch(db);
+
+    // 1. Guardar/Actualizar registros activos
+    Object.entries(studentRecords).forEach(([studentId, data]) => {
       const recordId = `${date}_${classId}_${studentId}`;
-      await setDoc(doc(db, 'attendance_records', recordId), {
+      const docRef = doc(db, 'attendance_records', recordId);
+      batch.set(docRef, {
         date,
         classId,
         studentId,
@@ -117,12 +120,13 @@ export const AppProvider = ({ children }) => {
     });
 
     // 2. Eliminar registros que el usuario quitó explícitamente
-    const deletePromises = idsToDelete.map(async (studentId) => {
+    idsToDelete.forEach((studentId) => {
       const recordId = `${date}_${classId}_${studentId}`;
-      await deleteDoc(doc(db, 'attendance_records', recordId));
+      const docRef = doc(db, 'attendance_records', recordId);
+      batch.delete(docRef);
     });
 
-    await Promise.all([...batchPromises, ...deletePromises]);
+    await batch.commit();
   };
 
   const clearAllRecords = async () => {
@@ -169,8 +173,25 @@ export const AppProvider = ({ children }) => {
         const snap = await getDocs(q);
         if (!snap.empty) {
           const docRef = snap.docs[0].ref;
-          await updateDoc(docRef, { receiptSent: true });
+          await updateDoc(docRef, { 
+            receiptSent: true,
+            receiptSentAt: new Date().toISOString()
+          });
         }
+      },
+      markWAReceiptSent: async (date, classId, studentId) => {
+        const recordId = `${date}_${classId}_${studentId}`;
+        const docRef = doc(db, 'attendance_records', recordId);
+        await setDoc(docRef, { 
+          waReceiptSent: true,
+          waReceiptSentAt: new Date().toISOString()
+        }, { merge: true });
+      },
+      markWAReminderSent: async (studentId) => {
+        const studentRef = doc(db, 'students', studentId);
+        await updateDoc(studentRef, { 
+          waReminderSentAt: new Date().toISOString()
+        });
       }
     }}>
       {children}

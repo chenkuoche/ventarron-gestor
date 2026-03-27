@@ -135,9 +135,9 @@ const MainLayout = ({ user }) => {
       {/* Content */}
       <main className="main-content">
         {/* Header */}
-        <header style={{
+        <header className="page-header" style={{
           height: '70px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex',
-          justifyContent: 'space-between', alignItems: 'center', padding: '0 40px',
+          justifyContent: 'space-between', alignItems: 'center',
           backgroundColor: '#2c3e50', position: 'sticky', top: 0, zIndex: 10
         }}>
           <div className="flex align-center gap-10" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -149,10 +149,10 @@ const MainLayout = ({ user }) => {
             </button>
             <h3 style={{ margin: 0 }}>{activePage}</h3>
           </div>
-            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.5.1</span> {/* Mejoras móvil Reportes & Reporte Mensual Automático */}
+            <span style={{ fontSize: '12px', opacity: 0.2 }}>v1.8.9</span> {/* Safari Width Fix */}
         </header>
 
-        <div className="container" style={{ padding: '30px 40px' }}>
+        <div className="container">
           {renderPage()}
         </div>
       </main>
