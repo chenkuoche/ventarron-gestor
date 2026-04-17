@@ -26,6 +26,7 @@ export const AppProvider = ({ children }) => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [activePage, setActivePage] = useState('Asistencia y Pagos');
   const [selectedClassId, setSelectedClassId] = useState('');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
   // 1. Sincronizar Alumnos en tiempo real
   useEffect(() => {
@@ -146,6 +147,7 @@ export const AppProvider = ({ children }) => {
       hasUnsavedChanges, setHasUnsavedChanges,
       activePage, setActivePage,
       selectedClassId, setSelectedClassId,
+      selectedDate, setSelectedDate,
       loading,
       sendEmail: async (data) => {
         const mailer = httpsCallable(functions, 'sendEmail');

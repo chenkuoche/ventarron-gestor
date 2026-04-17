@@ -390,38 +390,43 @@ tr:hover td {
     max-width: 100% !important;
   }
 
-  /* Attendance Table Mobile Cards */
-  .attendance-table,
-  .attendance-table tbody,
-  .attendance-table tr,
-  .attendance-table td {
-    display: block;
-    width: 100%;
-  }
+  /* Attendance Table Mobile Compact */
   .attendance-table thead {
-    display: none;
+    display: table-header-group !important;
   }
   .attendance-table tr {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 12px;
-    border: 1px solid var(--border-color);
-    margin-bottom: 25px;
-    padding: 15px !important;
+    display: table-row !important;
+    background: none !important;
+    border-radius: 0 !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    margin-bottom: 0 !important;
   }
   .attendance-table td {
-    padding: 0 !important;
-    border: none;
-    margin-bottom: 12px;
+    display: table-cell !important;
+    padding: 8px 5px !important;
+    vertical-align: middle;
   }
-  .attendance-table td:last-child {
-    margin-bottom: 0;
+  .attendance-table th {
+    padding: 10px 5px !important;
+    font-size: 12px;
   }
+  .attendance-table {
+    display: table !important;
+    table-layout: fixed;
+  }
+  
+  /* Ajustes de columnas para que quepa todo */
+  .attendance-table th:nth-child(1), .attendance-table td:nth-child(1) { width: 45%; }
+  .attendance-table th:nth-child(2), .attendance-table td:nth-child(2) { width: 45px; text-align: center; }
+  .attendance-table th:nth-child(3), .attendance-table td:nth-child(3) { width: auto; }
+
   .attendance-header {
-    position: relative !important;
-    top: 0 !important;
     flex-direction: column !important;
     align-items: stretch !important;
-    padding: 15px !important;
-    gap: 15px !important;
+    padding: 12px !important;
+    gap: 10px !important;
+    position: relative !important;
+    top: 0 !important;
   }
+
 }

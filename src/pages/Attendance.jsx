@@ -22,12 +22,12 @@ import {
     PlusCircle,
     MessageCircle,
     Copy,
-    DollarSign
+    DollarSign,
+    Users
 } from 'lucide-react';
 
 const Attendance = () => {
-    const { students, classes, records, saveAttendanceAndPayment, updateStudent, hasUnsavedChanges, setHasUnsavedChanges, selectedClassId, setSelectedClassId, sendEmail, markReceiptSent, markWAReceiptSent, markWAReminderSent } = useAppContext();
-    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const { students, classes, records, saveAttendanceAndPayment, updateStudent, hasUnsavedChanges, setHasUnsavedChanges, selectedClassId, setSelectedClassId, selectedDate, setSelectedDate, sendEmail, markReceiptSent, markWAReceiptSent, markWAReminderSent } = useAppContext();
     const [confirmModal, setConfirmModal] = useState(null); // { title: string, message: string, onConfirm: () => void }
     const [studentRecords, setStudentRecords] = useState({});
     const [searchExtra, setSearchExtra] = useState('');
@@ -39,6 +39,7 @@ const Attendance = () => {
     const [emailStatus, setEmailStatus] = useState({}); // { studentId: 'sending' | 'sent' | 'error' }
     const [forceOpen, setForceOpen] = useState(false);
     const [viewHistory, setViewHistory] = useState(null);
+    const [countdown, setCountdown] = useState(10); // Contador para autoguardado
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const lastRemoteSync = React.useRef(null);
 
@@ -107,6 +108,42 @@ const Attendance = () => {
         setForceOpen(false);
         lastRemoteSync.current = null;
     }, [selectedClassId, selectedDate]);
+
+    // 1b. Aviso de cambios sin guardar al cerrar pestaña
+    useEffect(() => {
+        const handleBeforeUnload = (e) => {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = ''; // Muestra el mensaje estándar del navegador
+            }
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [hasUnsavedChanges]);
+
+    // 1c. Lógica de AUTOGUARDADO con contador visual
+    useEffect(() => {
+        if (!hasUnsavedChanges || isSaving || !selectedClassId) {
+            setCountdown(10);
+            return;
+        }
+
+        // Cada vez que cambian los datos, reiniciamos el contador a 10
+        setCountdown(10);
+
+        const interval = setInterval(() => {
+            setCountdown(prev => {
+                if (prev <= 1) {
+                    clearInterval(interval);
+                    handleSave();
+                    return 10;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [hasUnsavedChanges, studentRecords, extraData, idsToDelete, selectedClassId, selectedDate, isSaving]);
 
     const handleSave = async () => {
         if (!selectedClassId || isSaving) return false;
@@ -312,10 +349,29 @@ const Attendance = () => {
 
     const togglePresence = (studentId) => {
         setHasUnsavedChanges(true);
-        setStudentRecords(prev => ({
-            ...prev,
-            [studentId]: { ...prev[studentId], present: !prev[studentId].present }
-        }));
+        setStudentRecords(prev => {
+            const current = prev[studentId] || { present: false, paymentAmount: 0, paymentMethod: '', receiptSent: false };
+            const newState = !current.present;
+            
+            let paymentAmount = current.paymentAmount;
+            let paymentMethod = current.paymentMethod;
+
+            // Si es una práctica y estamos marcando como presente, autocompletar con precio de la práctica
+            if (selectedClass?.isPractice && newState) {
+                paymentAmount = selectedClass.classPrice || 0;
+                paymentMethod = 'cash'; // Por defecto cash en prácticas
+            }
+
+            return {
+                ...prev,
+                [studentId]: { 
+                    ...current,
+                    present: newState,
+                    paymentAmount: paymentAmount,
+                    paymentMethod: paymentMethod
+                }
+            };
+        });
     };
 
     const handleValueChange = (studentId, field, value) => {
@@ -338,13 +394,40 @@ const Attendance = () => {
 
     const addExtraStudent = (student, type) => {
         setHasUnsavedChanges(true);
+        const selectedClass = classes.find(c => c.id === selectedClassId);
+        const plPrice = selectedClass?.plPrice || 249;
+        
         setStudentRecords(prev => ({
             ...prev,
-            [student.id]: { present: true, paymentAmount: 0, paymentMethod: '', receiptSent: false }
+            [student.id]: { 
+                present: true, 
+                paymentAmount: type === 'pl' ? plPrice : (selectedClass?.isPractice ? (selectedClass.classPrice || 0) : 0), 
+                paymentMethod: type === 'pl' ? 'transfer' : (selectedClass?.isPractice ? 'cash' : ''), 
+                receiptSent: false 
+            }
         }));
         setExtraData(prev => ({ ...prev, [student.id]: type }));
         setSearchExtra('');
     };
+
+    const handlePreloadAll = () => {
+        if (window.confirm("¿Deseas precargar a todos los alumnos en la lista? (Aparecerán sin marcar asistencia)")) {
+            setHasUnsavedChanges(true);
+            const newRecords = { ...studentRecords };
+            const newExtraData = { ...extraData };
+            
+            students.forEach(s => {
+                if (!newRecords[s.id]) {
+                    newRecords[s.id] = { present: false, paymentAmount: 0, paymentMethod: '', receiptSent: false };
+                    newExtraData[s.id] = 'event';
+                }
+            });
+            
+            setStudentRecords(newRecords);
+            setExtraData(newExtraData);
+        }
+    };
+
 
     const enrollStudent = (student) => {
         setHasUnsavedChanges(true);
@@ -360,14 +443,17 @@ const Attendance = () => {
     const removeExtra = (id, skipConfirm = false) => {
         const student = students.find(s => s.id === id);
         const isEnrolled = (student?.enrolledClasses || []).includes(selectedClassId);
+        const isGuestStatus = (student?.guestClasses || []).includes(selectedClassId);
         
         const action = () => {
             setHasUnsavedChanges(true);
             
-            // 1. Si está anotado en el grupo, lo quitamos permanentemente
-            if (isEnrolled && student) {
-                const newEnrolled = (student.enrolledClasses || []).filter(cid => cid !== selectedClassId);
-                updateStudent(student.id, { enrolledClasses: newEnrolled });
+            // 1. Si está anotado en el grupo (regular o invitado), lo quitamos permanentemente
+            if (student && (isEnrolled || isGuestStatus)) {
+                const updates = {};
+                if (isEnrolled) updates.enrolledClasses = (student.enrolledClasses || []).filter(cid => cid !== selectedClassId);
+                if (isGuestStatus) updates.guestClasses = (student.guestClasses || []).filter(cid => cid !== selectedClassId);
+                updateStudent(student.id, updates);
             }
 
             // 2. Limpiar de la lista de hoy
@@ -390,7 +476,7 @@ const Attendance = () => {
         } else {
             setConfirmModal({
                 title: 'Quitar Alumno',
-                message: isEnrolled 
+                message: (isEnrolled || isGuestStatus)
                     ? `¿Deseas QUITAR permanentemente a ${student?.name || 'alumno'} de este grupo? Ya no aparecerá en la lista regular.` 
                     : `¿Deseas quitar a ${student?.name || 'alumno'} de la lista de hoy?`,
                 onConfirm: action
@@ -398,35 +484,76 @@ const Attendance = () => {
         }
     };
 
+    // Si no hay clase seleccionada, mostrar selector
     if (!selectedClassId) {
+        const regularGroups = classes.filter(c => !c.isPractice);
+        const specialEvents = classes.filter(c => c.isPractice).sort((a,b) => b.date.localeCompare(a.date));
+
         return (
             <div className="attendance-select">
-                <h3 style={{ marginBottom: '30px' }}>Seleccione una clase para tomar lista</h3>
-                <div className="grid-classes" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-                    {classes.map(cls => (
-                        <div key={cls.id} className="card flex justify-between align-center" onClick={() => setSelectedClassId(cls.id)} style={{ cursor: 'pointer', transition: 'transform 0.2s ease' }}>
-                            <div>
-                                <p style={{ margin: 0, fontSize: '12px', opacity: 0.5, textTransform: 'uppercase' }}>{cls.day}</p>
-                                <h3 style={{ margin: '5px 0' }}>{cls.name}</h3>
-                                <p style={{ margin: 0, fontSize: '13px', opacity: 0.7 }}>{cls.time} - {cls.endTime}</p>
-                            </div>
-                            <ChevronRight size={20} opacity={0.3} />
+                <h3 style={{ marginBottom: '20px' }}>Seleccione una clase o evento</h3>
+                
+                {regularGroups.length > 0 && (
+                    <>
+                        <p style={{ fontSize: '11px', opacity: 0.5, letterSpacing: '1px', marginBottom: '15px' }}>GRUPOS REGULARES</p>
+                        <div className="grid-classes" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px', marginBottom: '40px' }}>
+                            {regularGroups.map(cls => (
+                                <div key={cls.id} className="card flex justify-between align-center" onClick={() => setSelectedClassId(cls.id)} style={{ cursor: 'pointer', transition: 'transform 0.2s ease', padding: '15px' }}>
+                                    <div>
+                                        <p style={{ margin: 0, fontSize: '11px', opacity: 0.5, textTransform: 'uppercase' }}>{cls.day} {cls.time}hs</p>
+                                        <h3 style={{ margin: '5px 0', fontSize: '1.2rem' }}>{cls.name}</h3>
+                                    </div>
+                                    <ChevronRight size={20} opacity={0.3} />
+                                </div>
+                            ))}
                         </div>
-                    ))}
-                </div>
+                    </>
+                )}
+
+                {specialEvents.length > 0 && (
+                    <>
+                        <p style={{ fontSize: '11px', opacity: 0.5, letterSpacing: '1px', marginBottom: '15px', color: '#f1c40f' }}>PRÁCTICAS Y EVENTOS ESPECIALES</p>
+                        <div className="grid-classes" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+                            {specialEvents.map(cls => (
+                                <div key={cls.id} className="card flex justify-between align-center" onClick={() => {
+                                    if (cls.date && cls.date !== selectedDate) {
+                                        if (window.confirm(`Este evento está programado para el ${new Date(cls.date + 'T12:00:00').toLocaleDateString('es-UY')}. ¿Deseas cambiar a esa fecha?`)) {
+                                            setSelectedDate(cls.date);
+                                        }
+                                    }
+                                    setSelectedClassId(cls.id);
+                                }} style={{ cursor: 'pointer', background: 'rgba(241, 196, 15, 0.05)', border: '1px solid rgba(241, 196, 15, 0.1)', padding: '15px' }}>
+                                    <div>
+                                        <p style={{ margin: 0, fontSize: '11px', color: '#f1c40f', fontWeight: 'bold' }}>{new Date(cls.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: 'long' })}</p>
+                                        <h3 style={{ margin: '5px 0', fontSize: '1.2rem' }}>{cls.name}</h3>
+                                    </div>
+                                    <Calendar size={20} color="#f1c40f" opacity={0.5} />
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
             </div>
         );
     }
 
     const selectedClass = classes.find(c => c.id === selectedClassId);
-    if (!selectedClass) return null;
+    if (!selectedClass) {
+        return (
+            <div className="flex flex-column align-center justify-center" style={{ height: '300px', opacity: 0.5 }}>
+                <Loader2 className="spin" size={30} style={{ marginBottom: '15px' }} />
+                <p>Cargando sesión...</p>
+                <button className="btn btn-secondary" onClick={() => setSelectedClassId('')} style={{ marginTop: '10px' }}>Volver al selector</button>
+            </div>
+        );
+    }
 
     // Obtener el nombre del día de la fecha seleccionada de forma robusta
     const selectedDateObj = new Date(selectedDate + 'T12:00:00');
     const daysEs = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
     const selectedDayName = daysEs[selectedDateObj.getDay()];
     
-    const isAutomaticNoClass = selectedClass && selectedDayName.toLowerCase().trim() !== selectedClass.day.toLowerCase().trim();
+    const isAutomaticNoClass = selectedClass && !selectedClass.isPractice && selectedDayName.toLowerCase().trim() !== selectedClass.day.toLowerCase().trim();
     const hasSavedRecords = records.some(r => 
         r.date === selectedDate && 
         r.classId === selectedClassId && 
@@ -506,7 +633,25 @@ const Attendance = () => {
                     </div>
                 </div>
                 <div className="flex align-center gap-15">
-                    {feedbackMsg && <div style={{ fontSize: '11px', color: feedbackMsg.includes('Error') ? '#e74c3c' : '#2ecc71', fontWeight: 'bold' }}>{feedbackMsg}</div>}
+                    {(feedbackMsg || (hasUnsavedChanges && !isSaving)) && (
+                        <div style={{ 
+                            fontSize: '11px', 
+                            color: feedbackMsg.includes('Error') ? '#e74c3c' : (hasUnsavedChanges ? '#f1c40f' : '#2ecc71'), 
+                            fontWeight: 'bold',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px'
+                        }}>
+                            {feedbackMsg || (
+                                <>
+                                    <span style={{ display: 'inline-block', width: '20px', height: '20px', borderRadius: '50%', border: '2px solid #f1c40f', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>
+                                        {countdown}
+                                    </span>
+                                    Cambios pendientes...
+                                </>
+                            )}
+                        </div>
+                    )}
                     {hasUnsavedChanges && !isSaving && (
                         <button className="btn" onClick={handleSave} style={{ backgroundColor: '#e74c3c', color: 'white', border: 'none', padding: '10px 20px', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 15px rgba(231, 76, 60, 0.4)' }}>
                             <Save size={18} /> GUARDAR
@@ -567,6 +712,15 @@ const Attendance = () => {
                             onChange={(e) => setSearchExtra(e.target.value)}
                             style={{ background: 'none', border: 'none', color: 'white', flex: 1, marginBottom: 0 }}
                         />
+                        {selectedClass.isPractice && (
+                            <button 
+                                className="btn btn-secondary" 
+                                onClick={handlePreloadAll}
+                                style={{ fontSize: '11px', padding: '8px 12px', border: '1px solid rgba(241, 196, 15, 0.3)', color: '#f1c40f', background: 'rgba(241, 196, 15, 0.05)' }}
+                            >
+                                <Users size={14} style={{ marginRight: '5px' }} /> PRECARGAR LISTA
+                            </button>
+                        )}
                     </div>
                     {searchResults.length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -629,9 +783,10 @@ const Attendance = () => {
                                                     >{student.name}</span>
                                                     {student.email && <span className="no-underline" style={{ fontSize: '10px', opacity: 0.4 }}>{student.email}</span>}
                                                     <div className="flex gap-5 mt-2">
-                                                        {type === 'recovery' && <span style={{ fontSize: '9px', background: 'rgba(231, 76, 60, 0.2)', color: '#e74c3c', padding: '2px 5px', borderRadius: '3px' }}>RECUPERA</span>}
-                                                        {type === 'guest' && <span style={{ fontSize: '9px', background: 'rgba(241, 196, 15, 0.2)', color: '#f1c40f', padding: '2px 5px', borderRadius: '3px' }}>INVITADO</span>}
-                                                        {type === 'pl' && <span style={{ fontSize: '9px', background: 'rgba(155, 89, 182, 0.2)', color: '#9b59b6', padding: '2px 5px', borderRadius: '3px', fontWeight: 'bold' }}>PL</span>}
+                                                        {type === 'recovery' && !selectedClass.isPractice && <span style={{ fontSize: '9px', background: 'rgba(231, 76, 60, 0.2)', color: '#e74c3c', padding: '2px 5px', borderRadius: '3px' }}>RECUPERA</span>}
+                                                        {type === 'guest' && !selectedClass.isPractice && <span style={{ fontSize: '9px', background: 'rgba(241, 196, 15, 0.2)', color: '#f1c40f', padding: '2px 5px', borderRadius: '3px' }}>INVITADO</span>}
+                                                        {type === 'pl' && !selectedClass.isPractice && <span style={{ fontSize: '9px', background: 'rgba(155, 89, 182, 0.2)', color: '#9b59b6', padding: '2px 5px', borderRadius: '3px', fontWeight: 'bold' }}>PL</span>}
+                                                        {type === 'event' && selectedClass.isPractice && <span style={{ fontSize: '9px', background: 'rgba(255, 255, 255, 0.1)', color: 'rgba(255,255,255,0.5)', padding: '2px 5px', borderRadius: '3px' }}>SISTEMA</span>}
                                                     </div>
                                                 </div>
                                             </td>
@@ -640,67 +795,74 @@ const Attendance = () => {
                                                     {rec.present ? <CircleCheck size={28} /> : <Circle size={28} opacity={0.3} />}
                                                 </button>
                                             </td>
-                                            <td style={{ padding: '10px 15px' }}>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                        <input type="number" value={rec.paymentAmount} onChange={(e) => handleValueChange(student.id, 'paymentAmount', e.target.value)} style={{ marginBottom: 0, padding: '10px', fontSize: '16px', textAlign: 'center', flex: 1, minWidth: '70px', fontWeight: 'bold' }} />
-                                                        
-                                                        <button 
-                                                            disabled={(amountNum <= 0 && !activePlan) || !student.email || currentEmailStatus === 'sending'}
-                                                            onClick={() => handleSendReceipt(student, amountNum > 0 ? rec : activePlan ? { paymentAmount: activePlan.plan === '1xS' ? selectedClass.monthlyPrice : selectedClass.monthly2xsPrice } : rec)}
-                                                            className="btn"
-                                                            style={{ 
-                                                                padding: '10px', backgroundColor: currentEmailStatus === 'sent' || currentEmailStatus === 'done' ? '#2ecc71' : '#3498db', 
-                                                                border: 'none', opacity: ((amountNum > 0 || activePlan) && student.email) ? 1 : 0.3,
-                                                                transition: 'all 0.3s ease',
-                                                                borderRadius: '8px'
-                                                            }}
-                                                            title="Enviar Recibo por Mail"
-                                                        >
-                                                            {currentEmailStatus === 'sending' ? <Loader2 size={18} className="spin" /> : 
-                                                            (currentEmailStatus === 'sent' || currentEmailStatus === 'done') ? <CheckCircle size={18} /> : 
-                                                            <Mail size={18} />}
-                                                        </button>
-
-                                                        <button 
-                                                            disabled={(amountNum <= 0 && !activePlan)}
-                                                            onClick={() => handleSendWA(student, 'receipt', { 
-                                                                amount: amountNum > 0 ? amountNum : activePlan ? (activePlan.plan === '1xS' ? selectedClass.monthlyPrice : selectedClass.monthly2xsPrice) : 0,
-                                                                date: selectedDate,
-                                                                classId: selectedClassId 
-                                                            })}
-                                                            className="btn"
-                                                            style={{ 
-                                                                padding: '10px', backgroundColor: rec.waReceiptSent ? '#2ecc71' : '#3498db', 
-                                                                border: 'none', opacity: (amountNum > 0 || activePlan) ? 1 : 0.3,
-                                                                transition: 'all 0.3s ease',
-                                                                borderRadius: '8px'
-                                                            }}
-                                                            title="Enviar Recibo por WhatsApp"
-                                                        >
-                                                            <MessageCircle size={18} />
-                                                        </button>
-
-                                                        <div style={{ display: 'flex', gap: '4px', flex: 1 }}>
-                                                            <button className="btn btn-secondary" onClick={() => handleValueChange(student.id, 'paymentMethod', 'cash')} style={{ padding: '10px 4px', flex: 1, fontSize: '12px', justifyContent: 'center', fontWeight: 'bold', ...((rec.paymentMethod === 'cash' || (amountNum === 0 && activePlan?.paymentMethod === 'cash')) ? { backgroundColor: '#2ecc71', color: 'white', borderColor: '#2ecc71' } : {}) }}>Efe</button>
-                                                            <button className="btn btn-secondary" onClick={() => handleValueChange(student.id, 'paymentMethod', 'transfer')} style={{ padding: '10px 4px', flex: 1, fontSize: '12px', justifyContent: 'center', fontWeight: 'bold', ...((rec.paymentMethod === 'transfer' || (amountNum === 0 && activePlan?.paymentMethod === 'transfer')) ? { backgroundColor: '#3498db', color: 'white', borderColor: '#3498db' } : {}) }}>Trf</button>
-                                                        </div>
-                                                    </div>
-                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
-                                                        <button className="btn btn-secondary" style={{ padding: '8px 2px', fontSize: '10px', justifyContent: 'center', ...(isS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.classPrice)}>S: ${selectedClass.classPrice}</button>
-                                                        <button className="btn btn-secondary" style={{ padding: '8px 2px', fontSize: '10px', justifyContent: 'center', ...(is1xS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.monthlyPrice)}>1xS</button>
-                                                        <button className="btn btn-secondary" style={{ padding: '8px 2px', fontSize: '10px', justifyContent: 'center', ...(is2xS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.monthly2xsPrice)}>2xS</button>
-                                                    </div>
-                                                    {amountNum === 0 && activePlan && (
-                                                        <div style={{ fontSize: '10px', color: '#2ecc71', textAlign: 'center', marginTop: '-2px', fontWeight: '500' }}>
-                                                            Mensualidad abonada el {new Date(activePlan.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })}
-                                                        </div>
-                                                    )}
-                                                    {type && (
-                                                        <button onClick={() => removeExtra(student.id)} style={{ background: 'rgba(231, 76, 60, 0.1)', border: '1px solid rgba(231, 76, 60, 0.2)', color: '#e74c3c', fontSize: '10px', padding: '5px', borderRadius: '4px' }}>Quitar</button>
-                                                    )}
-                                                </div>
-                                            </td>
+                                            <td style={{ padding: '8px 5px' }}>
+                                                 <div className="payment-controls" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                     <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                         <input type="number" value={rec.paymentAmount} onChange={(e) => handleValueChange(student.id, 'paymentAmount', e.target.value)} style={{ marginBottom: 0, padding: '8px', fontSize: '15px', textAlign: 'center', flex: '1 1 60px', minWidth: '60px', fontWeight: 'bold' }} />
+                                                         
+                                                         <button 
+                                                             disabled={(amountNum <= 0 && !activePlan) || !student.email || currentEmailStatus === 'sending'}
+                                                             onClick={() => handleSendReceipt(student, amountNum > 0 ? rec : activePlan ? { paymentAmount: activePlan.plan === '1xS' ? selectedClass.monthlyPrice : selectedClass.monthly2xsPrice } : rec)}
+                                                             className="btn"
+                                                             style={{ 
+                                                                 padding: '8px', backgroundColor: currentEmailStatus === 'sent' || currentEmailStatus === 'done' ? '#2ecc71' : '#3498db', 
+                                                                 border: 'none', opacity: ((amountNum > 0 || activePlan) && student.email) ? 1 : 0.3,
+                                                                 transition: 'all 0.3s ease',
+                                                                 borderRadius: '6px'
+                                                             }}
+                                                             title="Enviar Recibo por Mail"
+                                                         >
+                                                             {currentEmailStatus === 'sending' ? <Loader2 size={16} className="spin" /> : 
+                                                             (currentEmailStatus === 'sent' || currentEmailStatus === 'done') ? <CheckCircle size={16} /> : 
+                                                             <Mail size={16} />}
+                                                         </button>
+ 
+                                                         <button 
+                                                             disabled={(amountNum <= 0 && !activePlan)}
+                                                             onClick={() => handleSendWA(student, 'receipt', { 
+                                                                 amount: amountNum > 0 ? amountNum : activePlan ? (activePlan.plan === '1xS' ? selectedClass.monthlyPrice : selectedClass.monthly2xsPrice) : 0,
+                                                                 date: selectedDate,
+                                                                 classId: selectedClassId 
+                                                             })}
+                                                             className="btn"
+                                                             style={{ 
+                                                                 padding: '8px', backgroundColor: rec.waReceiptSent ? '#2ecc71' : '#3498db', 
+                                                                 border: 'none', opacity: (amountNum > 0 || activePlan) ? 1 : 0.3,
+                                                                 transition: 'all 0.3s ease',
+                                                                 borderRadius: '6px'
+                                                             }}
+                                                             title="Enviar Recibo por WhatsApp"
+                                                         >
+                                                             <MessageCircle size={16} />
+                                                         </button>
+ 
+                                                         <div style={{ display: 'flex', gap: '3px', flex: '1 1 auto' }}>
+                                                             <button className="btn btn-secondary" onClick={() => handleValueChange(student.id, 'paymentMethod', 'cash')} style={{ padding: '8px 4px', flex: 1, fontSize: '11px', justifyContent: 'center', fontWeight: 'bold', minWidth: '35px', ...((rec.paymentMethod === 'cash' || (amountNum === 0 && activePlan?.paymentMethod === 'cash')) ? { backgroundColor: '#2ecc71', color: 'white', borderColor: '#2ecc71' } : {}) }}>Efe</button>
+                                                             <button className="btn btn-secondary" onClick={() => handleValueChange(student.id, 'paymentMethod', 'transfer')} style={{ padding: '8px 4px', flex: 1, fontSize: '11px', justifyContent: 'center', fontWeight: 'bold', minWidth: '35px', ...((rec.paymentMethod === 'transfer' || (amountNum === 0 && activePlan?.paymentMethod === 'transfer')) ? { backgroundColor: '#3498db', color: 'white', borderColor: '#3498db' } : {}) }}>Trf</button>
+                                                         </div>
+                                                     </div>
+                                                     {!selectedClass.isPractice && (
+                                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '4px' }}>
+                                                             <button className="btn btn-secondary" style={{ padding: '6px 2px', fontSize: '9px', justifyContent: 'center', ...(isS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.classPrice)}>S: ${selectedClass.classPrice}</button>
+                                                             <button className="btn btn-secondary" style={{ padding: '6px 2px', fontSize: '9px', justifyContent: 'center', ...(is1xS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.monthlyPrice)}>1xS</button>
+                                                             <button className="btn btn-secondary" style={{ padding: '6px 2px', fontSize: '9px', justifyContent: 'center', ...(is2xS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.monthly2xsPrice)}>2xS</button>
+                                                             <button className="btn btn-secondary" style={{ padding: '6px 2px', fontSize: '9px', color: '#9b59b6', borderColor: extraData[student.id] === 'pl' ? '#9b59b6' : '', backgroundColor: extraData[student.id] === 'pl' ? 'rgba(155, 89, 182, 0.1)' : '', justifyContent: 'center' }} onClick={() => {
+                                                                 handleValueChange(student.id, 'paymentAmount', selectedClass.plPrice || 249);
+                                                                 handleValueChange(student.id, 'paymentMethod', 'transfer');
+                                                                 setExtraData(prev => ({ ...prev, [student.id]: 'pl' }));
+                                                             }}>PL: ${selectedClass.plPrice || 249}</button>
+                                                         </div>
+                                                     )}
+                                                     {amountNum === 0 && activePlan && (
+                                                         <div style={{ fontSize: '9px', color: '#2ecc71', textAlign: 'center', marginTop: '-2px', fontWeight: '500' }}>
+                                                             Abonado {new Date(activePlan.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })}
+                                                         </div>
+                                                     )}
+                                                     {type && (
+                                                         <button onClick={() => removeExtra(student.id)} style={{ background: 'rgba(231, 76, 60, 0.1)', border: '1px solid rgba(231, 76, 60, 0.2)', color: '#e74c3c', fontSize: '9px', padding: '4px', borderRadius: '4px' }}>Quitar Alumno</button>
+                                                     )}
+                                                 </div>
+                                             </td>
                                         </tr>
                                     );
                                 })}
@@ -759,20 +921,31 @@ const Attendance = () => {
                                 <div style={{ marginTop: '15px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                                     <p style={{ margin: '0 0 10px 0', fontSize: '10px', opacity: 0.4, letterSpacing: '1px' }}>GESTIÓN DE GRUPOS</p>
                                     <div className="flex flex-column gap-5">
-                                        {(viewHistory.enrolledClasses || []).map(cid => {
+                                        {[...(viewHistory.enrolledClasses || []), ...(viewHistory.guestClasses || [])].map(cid => {
                                             const cls = classes.find(c => c.id === cid);
+                                            const isGuest = (viewHistory.guestClasses || []).includes(cid);
                                             return (
                                                 <div key={cid} className="flex justify-between align-center" style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
-                                                    <span style={{ fontSize: '12px' }}>{cls ? cls.name : 'Clase eliminada'}</span>
+                                                    <div className="flex align-center gap-5">
+                                                        <span style={{ fontSize: '12px' }}>{cls ? cls.name : 'Clase eliminada'}</span>
+                                                        {isGuest && <span style={{ fontSize: '8px', background: 'rgba(241, 196, 15, 0.2)', color: '#f1c40f', padding: '1px 4px', borderRadius: '3px' }}>INVITADO</span>}
+                                                    </div>
                                                   <button 
                                                       onClick={() => {
                                                           setConfirmModal({
-                                                              title: 'Dar de Baja',
-                                                              message: `¿Deseas quitar a este alumno del grupo ${cls?.name || cid}? (Esto es una baja permanente del grupo)`,
+                                                              title: isGuest ? 'Quitar Invitado' : 'Dar de Baja',
+                                                              message: isGuest 
+                                                                ? `¿Deseas quitar a este alumno de la lista de invitados de ${cls?.name || cid}?`
+                                                                : `¿Deseas quitar a este alumno del grupo ${cls?.name || cid}? (Esto es una baja permanente del grupo)`,
                                                               onConfirm: () => {
-                                                                  const newEnrolled = viewHistory.enrolledClasses.filter(id => id !== cid);
-                                                                  updateStudent(viewHistory.id, { enrolledClasses: newEnrolled });
-                                                                  setViewHistory({ ...viewHistory, enrolledClasses: newEnrolled });
+                                                                  const updates = {};
+                                                                  if (isGuest) {
+                                                                      updates.guestClasses = viewHistory.guestClasses.filter(id => id !== cid);
+                                                                  } else {
+                                                                      updates.enrolledClasses = viewHistory.enrolledClasses.filter(id => id !== cid);
+                                                                  }
+                                                                  updateStudent(viewHistory.id, updates);
+                                                                  setViewHistory({ ...viewHistory, ...updates });
                                                                   
                                                                   // Si es la clase actual, quitar también de la lista de hoy para que no quede como 'recupera'
                                                                   if (cid === selectedClassId) {
@@ -783,7 +956,7 @@ const Attendance = () => {
                                                           });
                                                       }} 
                                                       style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}
-                                                  >DAR DE BAJA</button>
+                                                  >QUITAR</button>
                                                 </div>
                                             );
                                         })}

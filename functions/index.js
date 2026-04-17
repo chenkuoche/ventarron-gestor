@@ -15,14 +15,14 @@ const db = getFirestore();
 async function getStudentsToRemind(db) {
     const now = new Date();
     const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    
+
     // 1. Obtener alumnos, clases y registros
     const [studentsSnap, classesSnap, paymentsSnap] = await Promise.all([
         db.collection('students').get(),
         db.collection('classes').get(),
         db.collection('attendance_records').where('date', '>=', `${monthPrefix}-01`).get()
     ]);
-    
+
     const students = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     const classes = classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     const allRecords = paymentsSnap.docs.map(d => d.data());
@@ -63,7 +63,7 @@ async function getStudentsToRemind(db) {
     return pendingStudents.map(s => {
         const studentRecords = allRecords.filter(r => r.studentId === s.id);
         const unpaidAttendances = studentRecords.filter(r => r.present === true && Number(r.paymentAmount) <= 0);
-        
+
         let totalOwed = 0;
         let isFullMonthly = false;
 
@@ -80,8 +80,8 @@ async function getStudentsToRemind(db) {
         // Caso especial: Si la suma de clases sueltas supera o iguala la mensualidad más barata que debería pagar,
         // sugerimos el monto de la mensualidad en su lugar (si es beneficioso para el alumno).
         const firstClass = s.enrolledClasses[0];
-        const studentMonthlyPrice = s.enrolledClasses.length > 1 
-            ? classPricesMap[firstClass]?.monthly2xsPrice 
+        const studentMonthlyPrice = s.enrolledClasses.length > 1
+            ? classPricesMap[firstClass]?.monthly2xsPrice
             : classPricesMap[firstClass]?.monthlyPrice;
 
         if (studentMonthlyPrice && totalOwed >= studentMonthlyPrice) {
@@ -104,7 +104,7 @@ async function getStudentsToRemind(db) {
 /**
  * Función manual para enviar recibos desde la App
  */
-exports.sendEmail = onCall({ 
+exports.sendEmail = onCall({
     secrets: ["RESEND_API_KEY"],
     enforceAppCheck: false,
     region: "us-central1"
@@ -116,7 +116,7 @@ exports.sendEmail = onCall({
 
     try {
         const { data, error } = await resend.emails.send({
-            from: "Ventarrón Escuela de Tango <info@escueladetangoventarron.com>", 
+            from: "Ventarrón Escuela de Tango <info@escueladetangoventarron.com>",
             to: [to],
             reply_to: "escueladetangoventarron@gmail.com",
             subject: subject,
@@ -142,7 +142,7 @@ exports.sendMonthlyReminders = onSchedule({
     timeoutSeconds: 300 // 5 minutos de tiempo máximo
 }, async (event) => {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    
+
     try {
         const pendingStudents = await getStudentsToRemind(db);
 
@@ -193,7 +193,7 @@ exports.sendMonthlyReminders = onSchedule({
             // Esperar 1 segundo antes del próximo envío para respetar el rate limit
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
-        
+
     } catch (error) {
         logger.error("Error en tarea de recordatorios", error);
     }
@@ -203,7 +203,7 @@ exports.sendMonthlyReminders = onSchedule({
  * Función manual para PROBAR recordatorios.
  * Envía un correo de ejemplo a la dirección especificada.
  */
-exports.triggerTestReminder = onCall({ 
+exports.triggerTestReminder = onCall({
     secrets: ["RESEND_API_KEY"],
     enforceAppCheck: false,
     region: "us-central1"
@@ -247,22 +247,22 @@ exports.triggerTestReminder = onCall({
 /**
  * Función manual para OBTENER la lista de deudores actuales.
  */
-exports.getPendingReminders = onCall({ 
+exports.getPendingReminders = onCall({
     region: "us-central1"
 }, async (request) => {
     if (!request.auth) throw new Error("Sin permisos.");
     try {
         const pending = await getStudentsToRemind(db);
-        return { 
-            success: true, 
-            students: pending.map(s => ({ 
-                id: s.id, 
-                name: s.name, 
+        return {
+            success: true,
+            students: pending.map(s => ({
+                id: s.id,
+                name: s.name,
                 email: s.email,
                 attendanceDates: s.attendanceDates,
                 totalOwed: s.totalOwed,
-                isFullMonthly: s.isFullMonthly 
-            })) 
+                isFullMonthly: s.isFullMonthly
+            }))
         };
     } catch (err) {
         return { success: false, message: err.message };
@@ -272,14 +272,14 @@ exports.getPendingReminders = onCall({
 /**
  * Función manual para DISPARAR los recordatorios a todos los deudores.
  */
-exports.triggerManualReminders = onCall({ 
+exports.triggerManualReminders = onCall({
     secrets: ["RESEND_API_KEY"],
     timeoutSeconds: 300,
     region: "us-central1"
 }, async (request) => {
     if (!request.auth) throw new Error("Sin permisos.");
     const resend = new Resend(process.env.RESEND_API_KEY);
-    
+
     try {
         const pending = await getStudentsToRemind(db);
         logger.info(`Disparo manual de recordatorios para ${pending.length} pendientes.`);
@@ -347,7 +347,7 @@ exports.sendMonthlyReport = onSchedule({
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
-    
+
     if (tomorrow.getDate() !== 1) {
         logger.info("Hoy no es el último día del mes. No se genera reporte.");
         return;
@@ -358,7 +358,7 @@ exports.sendMonthlyReport = onSchedule({
         'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
         'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
     ];
-    
+
     const selectedMonth = today.getMonth();
     const selectedYear = today.getFullYear();
     const monthStr = (selectedMonth + 1).toString().padStart(2, '0');
@@ -422,10 +422,10 @@ exports.sendMonthlyReport = onSchedule({
         // 3. Replicar lógica de cálculo de Reports.jsx
         const classBreakdown = classes.map(cls => {
             let classRecords = records.filter(r => r.classId === cls.id);
-            
+
             // Filtramos por día programado
             classRecords = classRecords.filter(r => {
-                if (r.studentId === 'NO_CLASS') return true; 
+                if (r.studentId === 'NO_CLASS') return true;
                 const dObj = new Date(r.date + 'T12:00:00');
                 const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
                 return dayOfWeekMap[dNameEn] === cls.day;
@@ -486,11 +486,11 @@ exports.sendMonthlyReport = onSchedule({
 
         classBreakdown.forEach(cls => {
             const relevantStudentIds = [...new Set(cls.classRecords.filter(r => r.studentId !== 'NO_CLASS').map(r => r.studentId))];
-            const relevantStudents = relevantStudentIds.map(id => students.find(s => s.id === id)).filter(Boolean).sort((a,b) => a.name.localeCompare(b.name, 'es'));
+            const relevantStudents = relevantStudentIds.map(id => students.find(s => s.id === id)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name, 'es'));
 
             const classDates = cls.sessionDates;
             const headers = ["Alumno", ...classDates.map(d => new Date(d + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })), "Total Pagado"];
-            
+
             const rows = relevantStudents.map(student => {
                 let studentTotal = 0;
                 const columns = classDates.map(date => {

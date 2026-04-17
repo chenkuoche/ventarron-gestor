@@ -89,7 +89,7 @@ const Reports = () => {
             if (r.studentId === 'NO_CLASS') return true; 
             const dObj = new Date(r.date + 'T12:00:00');
             const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
-            return dayOfWeekMap[dNameEn] === cls.day;
+            return cls.isPractice || dayOfWeekMap[dNameEn] === cls.day;
         });
 
         const incomeFromMap = classIncomeMap[cls.id] || { total: 0, cash: 0, transfer: 0 };
@@ -107,7 +107,9 @@ const Reports = () => {
         const sessionDates = [...new Set(classRecords.filter(r => r.studentId !== 'NO_CLASS' && !datesWithNoClass.has(r.date)).map(r => r.date))].sort();
         const sessionsHeld = sessionDates.length;
 
-        const totalRent = sessionsHeld * (cls.rent || 0);
+        const totalRent = cls.isPractice 
+            ? (sessionsHeld > 0 ? (cls.rent || 0) : 0) // Para prácticas el alquiler es por evento único
+            : (sessionsHeld * (cls.rent || 0)); // Para clases regulares es por sesión
         const profitBeforeSplit = totalIncome - totalRent;
         const userProfit = profitBeforeSplit * (cls.profitSplit || 1);
 
@@ -182,7 +184,7 @@ const Reports = () => {
             if (r.studentId === 'NO_CLASS') return true; 
             const dObj = new Date(r.date + 'T12:00:00');
             const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
-            return dayOfWeekMap[dNameEn] === cls.day;
+            return cls.isPractice || dayOfWeekMap[dNameEn] === cls.day;
         });
 
         const datesWithNoClass = new Set(classRecords.filter(r => r.studentId === 'NO_CLASS').map(r => r.date));

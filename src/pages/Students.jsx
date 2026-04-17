@@ -9,6 +9,17 @@ const Students = () => {
     const [viewHistory, setViewHistory] = useState(null);
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const [formData, setFormData] = useState({ name: '', phone: '', email: '', enrolledClasses: [], guestClasses: [] });
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [exportConfig, setExportConfig] = useState({
+        filterClass: 'all',
+        columns: {
+            name: true,
+            phone: true,
+            email: true,
+            enrolledClasses: true,
+            guestClasses: false
+        }
+    });
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -107,6 +118,53 @@ const Students = () => {
         } else if (type === 'receipt' && data.date) {
             markWAReceiptSent(data.date, data.classId || selClass?.id, student.id);
         }
+    };
+
+    const handleExport = () => {
+        let filtered = [...students].sort((a,b) => a.name.localeCompare(b.name));
+        if (exportConfig.filterClass !== 'all') {
+            filtered = filtered.filter(s => 
+                (s.enrolledClasses || []).includes(exportConfig.filterClass) || 
+                (s.guestClasses || []).includes(exportConfig.filterClass)
+            );
+        }
+
+        // Generar CSV
+        const headers = [];
+        if (exportConfig.columns.name) headers.push('Nombre');
+        if (exportConfig.columns.phone) headers.push('Teléfono');
+        if (exportConfig.columns.email) headers.push('Email');
+        if (exportConfig.columns.enrolledClasses) headers.push('Grupos Regulares');
+        if (exportConfig.columns.guestClasses) headers.push('Grupos Invitado');
+
+        const rows = filtered.map(s => {
+            const row = [];
+            // Usamos punto y coma para separar celdas y evitar problemas con comas en nombres/clases
+            if (exportConfig.columns.name) row.push(`"${s.name}"`);
+            if (exportConfig.columns.phone) row.push(`"${s.phone || ''}"`);
+            if (exportConfig.columns.email) row.push(`"${s.email || ''}"`);
+            if (exportConfig.columns.enrolledClasses) {
+                const names = (s.enrolledClasses || []).map(id => classes.find(c => c.id === id)?.name || id).join(', ');
+                row.push(`"${names}"`);
+            }
+            if (exportConfig.columns.guestClasses) {
+                const names = (s.guestClasses || []).map(id => classes.find(c => c.id === id)?.name || id).join(', ');
+                row.push(`"${names}"`);
+            }
+            return row.join(';');
+        });
+
+        const csvContent = "\uFEFF" + [headers.join(';'), ...rows].join('\n'); // \uFEFF es para que Excel reconozca tildes (UTF-8)
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        const fileName = exportConfig.filterClass === 'all' 
+            ? 'lista_alumnos_ventarron.csv' 
+            : `lista_${classes.find(c => c.id === exportConfig.filterClass)?.name.replace(/ /g, '_')}.csv`;
+        link.setAttribute('download', fileName);
+        link.click();
+        setShowExportModal(false);
     };
 
     const filteredStudents = students.filter(s =>
@@ -210,10 +268,15 @@ const Students = () => {
                         </div>
 
                         <div className="flex gap-10" style={{ marginTop: '10px' }}>
-                            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                            <button type="submit" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
                                 <UserPlus size={18} />
                                 {isEditing ? 'Guardar Cambios' : 'Registrar'}
                             </button>
+                            {!isEditing && (
+                                <button type="button" onClick={() => setShowExportModal(true)} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center', opacity: 0.8 }}>
+                                    Descargar Lista
+                                </button>
+                            )}
                         </div>
                     </form>
                 </div>
@@ -360,17 +423,29 @@ const Students = () => {
                                 <div style={{ marginTop: '15px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                                     <p style={{ margin: '0 0 10px 0', fontSize: '10px', opacity: 0.4, letterSpacing: '1px' }}>GESTIÓN DE GRUPOS</p>
                                     <div className="flex flex-column gap-5">
-                                        {(viewHistory.enrolledClasses || []).map(cid => {
+                                        {[...(viewHistory.enrolledClasses || []), ...(viewHistory.guestClasses || [])].map(cid => {
                                             const cls = classes.find(c => c.id === cid);
+                                            const isGuest = (viewHistory.guestClasses || []).includes(cid);
                                             return (
                                                 <div key={cid} className="flex justify-between align-center" style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
-                                                    <span style={{ fontSize: '12px' }}>{cls ? cls.name : 'Clase eliminada'}</span>
+                                                    <div className="flex align-center gap-5">
+                                                        <span style={{ fontSize: '12px' }}>{cls ? cls.name : 'Clase eliminada'}</span>
+                                                        {isGuest && <span style={{ fontSize: '9px', background: 'rgba(241, 196, 15, 0.2)', color: '#f1c40f', padding: '1px 4px', borderRadius: '3px', fontWeight: 'bold' }}>INVITADO</span>}
+                                                    </div>
                                                     <button 
                                                         onClick={() => {
-                                                            if (window.confirm('¿Deseas dar de baja a este alumno de este grupo?')) {
-                                                                const newEnrolled = (viewHistory.enrolledClasses || []).filter(id => id !== cid);
-                                                                updateStudent(viewHistory.id, { enrolledClasses: newEnrolled });
-                                                                setViewHistory({ ...viewHistory, enrolledClasses: newEnrolled });
+                                                            const msg = isGuest 
+                                                                ? `¿Deseas quitar a este alumno de la lista de invitados de ${cls?.name || cid}?`
+                                                                : `¿Deseas dar de baja a este alumno del grupo ${cls?.name || cid}?`;
+                                                            if (window.confirm(msg)) {
+                                                                const updates = {};
+                                                                if (isGuest) {
+                                                                    updates.guestClasses = (viewHistory.guestClasses || []).filter(id => id !== cid);
+                                                                } else {
+                                                                    updates.enrolledClasses = (viewHistory.enrolledClasses || []).filter(id => id !== cid);
+                                                                }
+                                                                updateStudent(viewHistory.id, updates);
+                                                                setViewHistory({ ...viewHistory, ...updates });
                                                             }
                                                         }} 
                                                         style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
@@ -463,6 +538,59 @@ const Students = () => {
                         </div>
                         
                         <button onClick={() => setViewHistory(null)} className="btn btn-secondary" style={{ width: '100%', marginTop: '30px', justifyContent: 'center' }}>CERRAR</button>
+                    </div>
+                </div>
+            )}
+            {/* Modal de Exportación */}
+            {showExportModal && (
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 4000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(5px)' }}>
+                    <div className="card" style={{ maxWidth: '400px', width: '100%', padding: '30px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <h3 style={{ marginBottom: '20px', textAlign: 'center' }}>Exportar Alumnos</h3>
+                        
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ fontSize: '12px', opacity: 0.6, marginBottom: '8px', display: 'block' }}>FILTRAR POR GRUPO</label>
+                            <select 
+                                value={exportConfig.filterClass}
+                                onChange={(e) => setExportConfig({ ...exportConfig, filterClass: e.target.value })}
+                                style={{ marginBottom: 0 }}
+                            >
+                                <option value="all">Todos los alumnos</option>
+                                {classes.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div style={{ marginBottom: '25px' }}>
+                            <label style={{ fontSize: '12px', opacity: 0.6, marginBottom: '12px', display: 'block' }}>DATOS A INCLUIR</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
+                                {[
+                                    { id: 'name', label: 'Nombre Completo' },
+                                    { id: 'phone', label: 'Teléfono' },
+                                    { id: 'email', label: 'Email' },
+                                    { id: 'enrolledClasses', label: 'Grupos Regulares' },
+                                    { id: 'guestClasses', label: 'Grupos Invitado' }
+                                ].map(col => (
+                                    <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '14px' }}>
+                                        <input 
+                                            type="checkbox" 
+                                            checked={exportConfig.columns[col.id]} 
+                                            onChange={(e) => setExportConfig({
+                                                ...exportConfig,
+                                                columns: { ...exportConfig.columns, [col.id]: e.target.checked }
+                                            })}
+                                            style={{ margin: 0, width: '18px', height: '18px' }}
+                                        />
+                                        {col.label}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <button className="btn btn-primary" onClick={handleExport} style={{ width: '100%', justifyContent: 'center', padding: '12px' }}>DESCARGAR CSV</button>
+                            <button className="btn btn-secondary" onClick={() => setShowExportModal(false)} style={{ width: '100%', justifyContent: 'center', padding: '12px' }}>CANCELAR</button>
+                        </div>
                     </div>
                 </div>
             )}
