@@ -23,7 +23,8 @@ import {
     MessageCircle,
     Copy,
     DollarSign,
-    Users
+    Users,
+    EyeOff
 } from 'lucide-react';
 
 const Attendance = () => {
