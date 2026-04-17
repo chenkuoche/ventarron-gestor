@@ -40,6 +40,8 @@ const Attendance = () => {
     const [forceOpen, setForceOpen] = useState(false);
     const [viewHistory, setViewHistory] = useState(null);
     const [countdown, setCountdown] = useState(10); // Contador para autoguardado
+    const [answeredPracticePayment, setAnsweredPracticePayment] = useState(new Set());
+    const [showOnlyPending, setShowOnlyPending] = useState(false);
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const lastRemoteSync = React.useRef(null);
 
@@ -349,26 +351,25 @@ const Attendance = () => {
 
     const togglePresence = (studentId) => {
         setHasUnsavedChanges(true);
+
+        // Si es práctica, reseteamos la respuesta de si pagó o no para que vuelvan a aparecer los botones si se marca de nuevo
+        if (selectedClass?.isPractice) {
+            setAnsweredPracticePayment(prev => {
+                const next = new Set(prev);
+                next.delete(studentId);
+                return next;
+            });
+        }
+
         setStudentRecords(prev => {
             const current = prev[studentId] || { present: false, paymentAmount: 0, paymentMethod: '', receiptSent: false };
             const newState = !current.present;
             
-            let paymentAmount = current.paymentAmount;
-            let paymentMethod = current.paymentMethod;
-
-            // Si es una práctica y estamos marcando como presente, autocompletar con precio de la práctica
-            if (selectedClass?.isPractice && newState) {
-                paymentAmount = selectedClass.classPrice || 0;
-                paymentMethod = 'cash'; // Por defecto cash en prácticas
-            }
-
             return {
                 ...prev,
                 [studentId]: { 
                     ...current,
                     present: newState,
-                    paymentAmount: paymentAmount,
-                    paymentMethod: paymentMethod
                 }
             };
         });
@@ -401,8 +402,8 @@ const Attendance = () => {
             ...prev,
             [student.id]: { 
                 present: true, 
-                paymentAmount: type === 'pl' ? plPrice : (selectedClass?.isPractice ? (selectedClass.classPrice || 0) : 0), 
-                paymentMethod: type === 'pl' ? 'transfer' : (selectedClass?.isPractice ? 'cash' : ''), 
+                paymentAmount: type === 'pl' ? plPrice : 0, 
+                paymentMethod: type === 'pl' ? 'transfer' : '', 
                 receiptSent: false 
             }
         }));
@@ -569,6 +570,13 @@ const Attendance = () => {
         extraIdsArr.includes(s.id)
     );
 
+    const finalVisibleStudents = showOnlyPending 
+        ? visibleStudents.filter(s => {
+            const rec = studentRecords[s.id];
+            return rec && rec.present && Number(rec.paymentAmount) <= 0;
+          })
+        : visibleStudents;
+
     const searchResults = searchExtra.length > 1 ? students.filter(s =>
         s.name.toLowerCase().includes(searchExtra.toLowerCase()) &&
         !visibleStudents.find(vs => vs.id === s.id)
@@ -713,13 +721,31 @@ const Attendance = () => {
                             style={{ background: 'none', border: 'none', color: 'white', flex: 1, marginBottom: 0 }}
                         />
                         {selectedClass.isPractice && (
-                            <button 
-                                className="btn btn-secondary" 
-                                onClick={handlePreloadAll}
-                                style={{ fontSize: '11px', padding: '8px 12px', border: '1px solid rgba(241, 196, 15, 0.3)', color: '#f1c40f', background: 'rgba(241, 196, 15, 0.05)' }}
-                            >
-                                <Users size={14} style={{ marginRight: '5px' }} /> PRECARGAR LISTA
-                            </button>
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <button 
+                                    className="btn btn-secondary" 
+                                    onClick={() => setShowOnlyPending(!showOnlyPending)}
+                                    style={{ 
+                                        fontSize: '11px', padding: '8px 12px', 
+                                        border: '1px solid',
+                                        borderColor: showOnlyPending ? '#e74c3c' : 'rgba(255, 255, 255, 0.2)',
+                                        color: showOnlyPending ? 'white' : 'rgba(255, 255, 255, 0.6)', 
+                                        background: showOnlyPending ? '#e74c3c' : 'rgba(255, 255, 255, 0.05)',
+                                        fontWeight: showOnlyPending ? 'bold' : 'normal',
+                                        minWidth: '150px'
+                                    }}
+                                >
+                                    <EyeOff size={14} style={{ marginRight: '5px' }} /> 
+                                    {showOnlyPending ? 'FILTRO: PENDIENTES' : 'MOSTRAR SOLO PENDIENTES'}
+                                </button>
+                                <button 
+                                    className="btn btn-secondary" 
+                                    onClick={handlePreloadAll}
+                                    style={{ fontSize: '11px', padding: '8px 12px', border: '1px solid rgba(241, 196, 15, 0.3)', color: '#f1c40f', background: 'rgba(241, 196, 15, 0.05)' }}
+                                >
+                                    <Users size={14} style={{ marginRight: '5px' }} /> PRECARGAR LISTA
+                                </button>
+                            </div>
                         )}
                     </div>
                     {searchResults.length > 0 && (
@@ -750,7 +776,7 @@ const Attendance = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {visibleStudents.map(student => {
+                                {finalVisibleStudents.map(student => {
                                     const rec = studentRecords[student.id] || { present: false, paymentAmount: 0, paymentMethod: '', receiptSent: false };
                                     const studentStatus = emailStatus[student.id];
                                     const type = extraData[student.id];
@@ -856,6 +882,46 @@ const Attendance = () => {
                                                      {amountNum === 0 && activePlan && (
                                                          <div style={{ fontSize: '9px', color: '#2ecc71', textAlign: 'center', marginTop: '-2px', fontWeight: '500' }}>
                                                              Abonado {new Date(activePlan.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })}
+                                                         </div>
+                                                     )}
+                                                     {selectedClass.isPractice && rec.present && amountNum === 0 && !answeredPracticePayment.has(student.id) && (
+                                                         <div style={{ 
+                                                             display: 'flex', 
+                                                             alignItems: 'center', 
+                                                             justifyContent: 'center',
+                                                             gap: '6px', 
+                                                             marginTop: '5px',
+                                                             padding: '10px',
+                                                             backgroundColor: 'rgba(241, 196, 15, 0.15)',
+                                                             borderRadius: '8px',
+                                                             border: '1px solid rgba(241, 196, 15, 0.3)',
+                                                             animation: 'fadeIn 0.3s ease'
+                                                         }}>
+                                                             <span style={{ fontSize: '11px', color: '#f1c40f', fontWeight: 'bold' }}>¿PAGÓ?</span>
+                                                             <button 
+                                                                 className="btn" 
+                                                                 onClick={() => {
+                                                                     handleValueChange(student.id, 'paymentAmount', selectedClass.classPrice || 0);
+                                                                     handleValueChange(student.id, 'paymentMethod', 'cash');
+                                                                     setAnsweredPracticePayment(prev => {
+                                                                         const next = new Set(prev);
+                                                                         next.add(student.id);
+                                                                         return next;
+                                                                     });
+                                                                 }}
+                                                                 style={{ padding: '6px 12px', fontSize: '11px', backgroundColor: '#2ecc71', color: 'white', border: 'none', fontWeight: 'bold', borderRadius: '4px' }}
+                                                             >SÍ</button>
+                                                             <button 
+                                                                 className="btn"
+                                                                 onClick={() => {
+                                                                     setAnsweredPracticePayment(prev => {
+                                                                         const next = new Set(prev);
+                                                                         next.add(student.id);
+                                                                         return next;
+                                                                     });
+                                                                 }}
+                                                                 style={{ padding: '6px 12px', fontSize: '11px', backgroundColor: '#e74c3c', color: 'white', border: 'none', fontWeight: 'bold', borderRadius: '4px' }}
+                                                             >NO</button>
                                                          </div>
                                                      )}
                                                      {type && (

@@ -25,6 +25,7 @@ const Reports = () => {
     const [isLoadingPending, setIsLoadingPending] = useState(false);
     const [isSending, setIsSending] = useState(false);
     const [expandedDebtor, setExpandedDebtor] = useState(null);
+    const [debtTypeFilter, setDebtTypeFilter] = useState('all'); // 'all', 'classes', 'practices'
 
 
     const months = [
@@ -508,44 +509,104 @@ const Reports = () => {
                                 <p style={{ fontSize: '14px', color: '#2ecc71' }}>¡Todos los alumnos tienen sus pagos al día!</p>
                             </div>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '350px', overflowY: 'auto', paddingRight: '10px' }}>
-                                {pendingReminders.map(s => (
-                                    <div 
-                                        key={s.id} 
-                                        onClick={() => setExpandedDebtor(expandedDebtor === s.id ? null : s.id)}
-                                        className="flex flex-column" 
+                            <>
+                                <div className="flex gap-10" style={{ marginBottom: '15px' }}>
+                                    <button 
+                                        className="btn" 
+                                        onClick={() => setDebtTypeFilter('all')}
                                         style={{ 
-                                            padding: '12px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '8px', 
-                                            fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
-                                            border: expandedDebtor === s.id ? '1px solid rgba(52, 152, 219, 0.4)' : '1px solid transparent'
+                                            flex: 1, fontSize: '10px', padding: '8px', 
+                                            backgroundColor: debtTypeFilter === 'all' ? '#3498db' : 'rgba(255,255,255,0.05)',
+                                            border: debtTypeFilter === 'all' ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                                            color: 'white', fontWeight: 'bold'
                                         }}
-                                    >
-                                        <div className="flex justify-between align-center">
-                                            <span style={{ fontWeight: '600', color: expandedDebtor === s.id ? '#3498db' : 'inherit' }} spellCheck="false" autoCorrect="off" autoCapitalize="none">{s.name}</span>
-                                            <span style={{ fontSize: '11px', opacity: 0.5 }}>{s.email}</span>
-                                        </div>
-                                        
-                                        {expandedDebtor === s.id && s.attendanceDates && (
-                                            <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                <p style={{ margin: 0, fontSize: '10px', opacity: 0.6, color: '#3498db', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                                    Asistencias sin pago (este mes):
-                                                </p>
-                                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                                    {s.attendanceDates.length > 0 ? (
-                                                        s.attendanceDates.map(date => (
-                                                            <span key={date} style={{ backgroundColor: 'rgba(52, 152, 219, 0.15)', color: '#3498db', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '500' }}>
-                                                                {new Date(date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })}
-                                                            </span>
-                                                        ))
-                                                    ) : (
-                                                        <span style={{ fontSize: '11px', opacity: 0.5 }}>No se encontraron asistencias registradas.</span>
-                                                    )}
+                                    >TODOS</button>
+                                    <button 
+                                        className="btn" 
+                                        onClick={() => setDebtTypeFilter('classes')}
+                                        style={{ 
+                                            flex: 1, fontSize: '10px', padding: '8px', 
+                                            backgroundColor: debtTypeFilter === 'classes' ? '#3498db' : 'rgba(255,255,255,0.05)',
+                                            border: debtTypeFilter === 'classes' ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                                            color: 'white', fontWeight: 'bold'
+                                        }}
+                                    >DEUDAS CLASES</button>
+                                    <button 
+                                        className="btn" 
+                                        onClick={() => setDebtTypeFilter('practices')}
+                                        style={{ 
+                                            flex: 1, fontSize: '10px', padding: '8px', 
+                                            backgroundColor: debtTypeFilter === 'practices' ? '#f1c40f' : 'rgba(255,255,255,0.05)',
+                                            border: debtTypeFilter === 'practices' ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                                            color: 'white', fontWeight: 'bold'
+                                        }}
+                                    >DEUDAS PRÁCTICAS</button>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '350px', overflowY: 'auto', paddingRight: '10px' }}>
+                                    {pendingReminders
+                                        .filter(s => {
+                                            if (debtTypeFilter === 'classes') return s.classDebt > 0;
+                                            if (debtTypeFilter === 'practices') return s.practiceDebt > 0;
+                                            return true;
+                                        })
+                                        .map(s => (
+                                        <div 
+                                            key={s.id} 
+                                            onClick={() => setExpandedDebtor(expandedDebtor === s.id ? null : s.id)}
+                                            className="flex flex-column" 
+                                            style={{ 
+                                                padding: '12px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '8px', 
+                                                fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
+                                                border: expandedDebtor === s.id ? '1px solid rgba(52, 152, 219, 0.4)' : '1px solid transparent'
+                                            }}
+                                        >
+                                            <div className="flex justify-between align-center">
+                                                <span style={{ fontWeight: '600', color: expandedDebtor === s.id ? '#3498db' : 'inherit' }} spellCheck="false" autoCorrect="off" autoCapitalize="none">{s.name}</span>
+                                                <span style={{ fontSize: '11px', opacity: 0.5 }}>{s.email}</span>
+                                            </div>
+                                            <div className="flex justify-between align-center" style={{ marginTop: '5px' }}>
+                                                <span style={{ fontSize: '14px', fontWeight: '800', color: '#e74c3c' }}>${s.totalOwed}</span>
+                                                <div className="flex gap-5">
+                                                    {s.classDebt > 0 && <span style={{ fontSize: '9px', backgroundColor: 'rgba(52, 152, 219, 0.1)', color: '#3498db', padding: '2px 6px', borderRadius: '4px', fontWeight: '700', border: '1px solid rgba(52, 152, 219, 0.2)' }}>CLASES: ${s.classDebt}</span>}
+                                                    {s.practiceDebt > 0 && <span style={{ fontSize: '9px', backgroundColor: 'rgba(241, 196, 15, 0.1)', color: '#f1c40f', padding: '2px 6px', borderRadius: '4px', fontWeight: '700', border: '1px solid rgba(241, 196, 15, 0.2)' }}>PRÁCTICAS: ${s.practiceDebt}</span>}
                                                 </div>
                                             </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
+                                            
+                                            {expandedDebtor === s.id && (s.attendanceDetails || s.attendanceDates) && (
+                                                <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                    <p style={{ margin: 0, fontSize: '10px', opacity: 0.6, color: '#3498db', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                        Asistencias sin pago (este mes):
+                                                    </p>
+                                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                        {s.attendanceDetails ? (
+                                                            s.attendanceDetails.map(det => (
+                                                                <div key={det.date + det.className} style={{ 
+                                                                    backgroundColor: det.isPractice ? 'rgba(241, 196, 15, 0.15)' : 'rgba(52, 152, 219, 0.15)', 
+                                                                    color: det.isPractice ? '#f1c40f' : '#3498db', 
+                                                                    padding: '5px 10px', borderRadius: '6px', fontSize: '11px', 
+                                                                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                                                    border: `1px solid ${det.isPractice ? 'rgba(241, 196, 15, 0.2)' : 'rgba(52, 152, 219, 0.2)'}`
+                                                                }}>
+                                                                    <span style={{ fontWeight: 'bold', fontSize: '13px' }}>{new Date(det.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })}</span>
+                                                                    <span style={{ fontSize: '9px', opacity: 0.7, textTransform: 'uppercase', fontWeight: '600', marginTop: '2px' }}>{det.className}</span>
+                                                                </div>
+                                                            ))
+                                                        ) : s.attendanceDates.length > 0 ? (
+                                                            s.attendanceDates.map(date => (
+                                                                <span key={date} style={{ backgroundColor: 'rgba(52, 152, 219, 0.15)', color: '#3498db', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '500' }}>
+                                                                    {new Date(date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })}
+                                                                </span>
+                                                            ))
+                                                        ) : (
+                                                            <span style={{ fontSize: '11px', opacity: 0.5 }}>No se encontraron asistencias registradas.</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
                         )}
                     </div>
                 </div>

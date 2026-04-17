@@ -27,77 +27,111 @@ async function getStudentsToRemind(db) {
     const classes = classesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     const allRecords = paymentsSnap.docs.map(d => d.data());
 
-    // Mapeo de precios de clases para cálculo rápido
-    const classPricesMap = {};
+    // Mapeo detallado de clases
+    const classDataMap = {};
     const monthlyPrices = new Set();
     classes.forEach(c => {
-        classPricesMap[c.id] = {
+        classDataMap[c.id] = {
+            name: c.name || 'Clase',
             classPrice: Number(c.classPrice || 0),
             monthlyPrice: Number(c.monthlyPrice || 0),
-            monthly2xsPrice: Number(c.monthly2xsPrice || 0)
+            monthly2xsPrice: Number(c.monthly2xsPrice || 0),
+            isPractice: c.isPractice || false
         };
         if (c.monthlyPrice) monthlyPrices.add(Number(c.monthlyPrice));
         if (c.monthly2xsPrice) monthlyPrices.add(Number(c.monthly2xsPrice));
     });
 
-    // Procesar cada alumno para ver si es deudor
-    const pendingStudents = students.filter(s => {
-        if (!s.email || !s.enrolledClasses || s.enrolledClasses.length === 0) return false;
-        if (s.guestClasses && s.guestClasses.length > 0) return false;
+    const results = [];
+
+    // 2. Procesar cada alumno
+    students.forEach(s => {
+        if (!s.email) return;
 
         const studentRecords = allRecords.filter(r => r.studentId === s.id);
-        const hasPL = studentRecords.some(r => r.isPL === true);
-        if (hasPL) return false;
+        const unpaidAttendances = studentRecords.filter(r => {
+            const data = classDataMap[r.classId];
+            if (!data) return false;
+            
+            // Requisitos básicos: presente y sin pago
+            if (r.present !== true || Number(r.paymentAmount) > 0 || r.isPL) return false;
 
-        const attendances = studentRecords.filter(r => r.present === true);
-        if (attendances.length === 0) return false;
+            // Filtro de Invitados: siempre gratis (pedidor por el usuario)
+            if (r.isGuest) return false;
 
-        const hasPaidMonthly = studentRecords.some(r => monthlyPrices.has(Number(r.paymentAmount)));
-        if (hasPaidMonthly) return false;
+            // Filtro de Recuperaciones: gratis en clases regulares, pero visibles como deuda en prácticas
+            if (r.isRecovery && !data.isPractice) return false;
 
-        const hasUnpaidAttendance = attendances.some(r => Number(r.paymentAmount) <= 0);
-        return hasUnpaidAttendance;
-    });
-
-    // Mapear con datos detallados para el mail
-    return pendingStudents.map(s => {
-        const studentRecords = allRecords.filter(r => r.studentId === s.id);
-        const unpaidAttendances = studentRecords.filter(r => r.present === true && Number(r.paymentAmount) <= 0);
-
-        let totalOwed = 0;
-        let isFullMonthly = false;
-
-        // Si el alumno está anotado en grupos, verificamos si su deuda total alcanza una mensualidad
-        // o si simplemente sumamos por clase suelta. 
-        // Por simplicidad para el usuario, si no pagó la mensualidad, calculamos la suma de las clases que asistió.
-        unpaidAttendances.forEach(r => {
-            const prices = classPricesMap[r.classId];
-            if (prices) {
-                totalOwed += prices.classPrice;
-            }
+            return true;
         });
 
-        // Caso especial: Si la suma de clases sueltas supera o iguala la mensualidad más barata que debería pagar,
-        // sugerimos el monto de la mensualidad en su lugar (si es beneficioso para el alumno).
-        const firstClass = s.enrolledClasses[0];
-        const studentMonthlyPrice = s.enrolledClasses.length > 1
-            ? classPricesMap[firstClass]?.monthly2xsPrice
-            : classPricesMap[firstClass]?.monthlyPrice;
+        if (unpaidAttendances.length === 0) return;
 
-        if (studentMonthlyPrice && totalOwed >= studentMonthlyPrice) {
-            totalOwed = studentMonthlyPrice;
-            isFullMonthly = true;
+        // Verificar si ya pagó una mensualidad este mes
+        const hasPaidMonthly = studentRecords.some(r => monthlyPrices.has(Number(r.paymentAmount)));
+        
+        let classDebt = 0;
+        let practiceDebt = 0;
+        let attendanceDetails = [];
+
+        unpaidAttendances.forEach(r => {
+            const data = classDataMap[r.classId];
+            if (!data) return;
+
+            // Si ya pagó mensualidad, solo contamos las deudas de prácticas
+            if (hasPaidMonthly && !data.isPractice) return;
+
+            const amount = data.classPrice || 0;
+            if (data.isPractice) {
+                practiceDebt += amount;
+            } else {
+                classDebt += amount;
+            }
+            
+            attendanceDetails.push({
+                date: r.date,
+                className: data.name,
+                isPractice: data.isPractice,
+                amount: amount
+            });
+        });
+
+        if (attendanceDetails.length === 0) return;
+
+        // Lógica de redondeo a mensualidad solo para la parte de "clases"
+        let isFullMonthly = false;
+        let finalClassDebt = classDebt;
+
+        if (classDebt > 0 && s.enrolledClasses && s.enrolledClasses.length > 0) {
+            const firstClass = s.enrolledClasses[0];
+            const studentMonthlyPrice = s.enrolledClasses.length > 1
+                ? classDataMap[firstClass]?.monthly2xsPrice
+                : classDataMap[firstClass]?.monthlyPrice;
+
+            if (studentMonthlyPrice && classDebt >= studentMonthlyPrice) {
+                finalClassDebt = studentMonthlyPrice;
+                isFullMonthly = true;
+            }
         }
 
-        return {
-            id: s.id,
-            name: s.name,
-            email: s.email,
-            attendanceDates: unpaidAttendances.map(r => r.date).sort(),
-            totalOwed,
-            isFullMonthly
-        };
+        const totalOwed = finalClassDebt + practiceDebt;
+
+        if (attendanceDetails.length > 0) {
+            results.push({
+                id: s.id,
+                name: s.name,
+                email: s.email,
+                attendanceDates: attendanceDetails.map(d => d.date).sort(), // Para retrocompatibilidad
+                attendanceDetails: attendanceDetails.sort((a, b) => a.date.localeCompare(b.date)),
+                totalOwed,
+                classDebt: finalClassDebt,
+                practiceDebt,
+                isFullMonthly
+            });
+        }
     });
+
+    return results;
 }
 
 
@@ -260,7 +294,10 @@ exports.getPendingReminders = onCall({
                 name: s.name,
                 email: s.email,
                 attendanceDates: s.attendanceDates,
+                attendanceDetails: s.attendanceDetails,
                 totalOwed: s.totalOwed,
+                classDebt: s.classDebt,
+                practiceDebt: s.practiceDebt,
                 isFullMonthly: s.isFullMonthly
             }))
         };
