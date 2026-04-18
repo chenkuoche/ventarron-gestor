@@ -198,7 +198,8 @@ input, select, textarea {
   box-sizing: border-box;
 }
 
-input[type="time"] {
+input[type="time"],
+input[type="date"] {
   min-width: 0 !important;
   max-width: 100% !important;
   width: 100% !important;

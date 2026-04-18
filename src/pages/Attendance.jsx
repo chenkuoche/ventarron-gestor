@@ -905,67 +905,98 @@ const Attendance = () => {
                                                      {amountNum === 0 && activePlan && (
                                                          <div style={{ fontSize: '9px', color: '#2ecc71', textAlign: 'center', marginTop: '-2px', fontWeight: '500' }}>
                                                              Abonado {new Date(activePlan.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })}
-                                                         </div>
-                                                     )}
-                                                     {selectedClass.isPractice && rec.present && amountNum === 0 && !answeredPracticePayment.has(student.id) && (
+                                                          </div>
+                                                      )}
+                                                      {selectedClass.isPractice && rec.present && (
                                                          <div style={{ 
                                                              display: 'flex', 
+                                                             flexDirection: 'column',
                                                              alignItems: 'center', 
                                                              justifyContent: 'center',
                                                              gap: '6px', 
                                                              marginTop: '5px',
-                                                             padding: '10px',
-                                                             backgroundColor: 'rgba(241, 196, 15, 0.15)',
+                                                             padding: '8px 5px',
+                                                             backgroundColor: 'rgba(241, 196, 15, 0.08)',
                                                              borderRadius: '8px',
-                                                             border: '1px solid rgba(241, 196, 15, 0.3)',
+                                                             border: '1px solid rgba(241, 196, 15, 0.2)',
                                                              animation: 'fadeIn 0.3s ease'
                                                          }}>
-                                                             <span style={{ fontSize: '11px', color: '#f1c40f', fontWeight: 'bold' }}>¿PAGÓ?</span>
-                                                             <button 
-                                                                 className="btn" 
-                                                                 onClick={() => {
-                                                                     setHasUnsavedChanges(true); // Asegurar que marque cambios
-                                                                     handleValueChange(student.id, 'paymentAmount', selectedClass.classPrice || 0);
-                                                                     handleValueChange(student.id, 'paymentMethod', 'cash');
-                                                                     setAnsweredPracticePayment(prev => {
-                                                                         const next = new Set(prev);
-                                                                         next.add(student.id);
-                                                                         return next;
+                                                             <span style={{ fontSize: '10px', color: '#f1c40f', fontWeight: 'bold', opacity: 0.8 }}>¿PAGÓ?</span>
+                                                             <div style={{ display: 'flex', gap: '5px', width: '100%', justifyContent: 'center' }}>
+                                                                 {(() => {
+                                                                     const isInvClicked = extraData[student.id] === 'guest';
+                                                                     const isSiClicked = amountNum > 0;
+                                                                     const isNoClicked = amountNum === 0 && !isInvClicked && (answeredPracticePayment.has(student.id) || (rec.present && !isInvClicked && amountNum === 0 && false)); // El false es para no marcar NO por defecto si no interactuó
+                                                                     
+                                                                     // Definir si hay alguno seleccionado para saber si grisar el resto
+                                                                     const somethingSelected = isSiClicked || isNoClicked || isInvClicked;
+
+                                                                     const getBtnStyle = (active, color, activeColor = 'white') => ({
+                                                                         padding: '6px', 
+                                                                         fontSize: '10px', 
+                                                                         flex: '1', 
+                                                                         backgroundColor: active ? color : (somethingSelected ? 'rgba(255,255,255,0.1)' : color),
+                                                                         color: active ? activeColor : (somethingSelected ? 'rgba(255,255,255,0.5)' : activeColor),
+                                                                         border: active ? 'none' : (somethingSelected ? '1px solid rgba(255,255,255,0.1)' : 'none'),
+                                                                         fontWeight: 'bold', 
+                                                                         borderRadius: '4px',
+                                                                         opacity: somethingSelected && !active ? 0.65 : 1,
+                                                                         transition: 'all 0.2s'
                                                                      });
-                                                                 }}
-                                                                 style={{ padding: '6px 12px', fontSize: '11px', backgroundColor: '#2ecc71', color: 'white', border: 'none', fontWeight: 'bold', borderRadius: '4px' }}
-                                                             >SÍ</button>
-                                                             <button 
-                                                                 className="btn"
-                                                                 onClick={() => {
-                                                                     // Si era invitado, quitar esa marca para que figure como deudor
-                                                                     if (extraData[student.id] === 'guest') {
-                                                                         setHasUnsavedChanges(true);
-                                                                         setExtraData(prev => ({ ...prev, [student.id]: 'event' }));
-                                                                     }
-                                                                     setAnsweredPracticePayment(prev => {
-                                                                         const next = new Set(prev);
-                                                                         next.add(student.id);
-                                                                         return next;
-                                                                     });
-                                                                 }}
-                                                                 style={{ padding: '6px 12px', fontSize: '11px', backgroundColor: '#e74c3c', color: 'white', border: 'none', fontWeight: 'bold', borderRadius: '4px' }}
-                                                             >NO</button>
-                                                             <button 
-                                                                 className="btn"
-                                                                 onClick={() => {
-                                                                     setHasUnsavedChanges(true);
-                                                                     setExtraData(prev => ({ ...prev, [student.id]: 'guest' }));
-                                                                     setAnsweredPracticePayment(prev => {
-                                                                         const next = new Set(prev);
-                                                                         next.add(student.id);
-                                                                         return next;
-                                                                     });
-                                                                 }}
-                                                                 style={{ padding: '6px 12px', fontSize: '11px', backgroundColor: '#f1c40f', color: '#1a202c', border: 'none', fontWeight: 'bold', borderRadius: '4px' }}
-                                                             >INVITADO</button>
+
+                                                                     return (
+                                                                         <>
+                                                                             <button 
+                                                                                 className="btn" 
+                                                                                 onClick={() => {
+                                                                                     setHasUnsavedChanges(true);
+                                                                                     handleValueChange(student.id, 'paymentAmount', selectedClass.classPrice || 0);
+                                                                                     handleValueChange(student.id, 'paymentMethod', 'cash');
+                                                                                     if (extraData[student.id] === 'guest') {
+                                                                                         setExtraData(prev => ({ ...prev, [student.id]: 'event' }));
+                                                                                     }
+                                                                                     setAnsweredPracticePayment(prev => new Set(prev).add(student.id));
+                                                                                 }}
+                                                                                 style={getBtnStyle(isSiClicked, '#2ecc71')}
+                                                                             >SÍ</button>
+                                                                             <button 
+                                                                                 className="btn"
+                                                                                 onClick={() => {
+                                                                                     setHasUnsavedChanges(true);
+                                                                                     handleValueChange(student.id, 'paymentAmount', 0);
+                                                                                     handleValueChange(student.id, 'paymentMethod', '');
+                                                                                     if (extraData[student.id] === 'guest') {
+                                                                                         setExtraData(prev => ({ ...prev, [student.id]: 'event' }));
+                                                                                     }
+                                                                                     setAnsweredPracticePayment(prev => {
+                                                                                         const next = new Set(prev);
+                                                                                         next.add(student.id);
+                                                                                         return next;
+                                                                                     });
+                                                                                 }}
+                                                                                 style={getBtnStyle(isNoClicked, '#e74c3c')}
+                                                                             >NO</button>
+                                                                             <button 
+                                                                                 className="btn"
+                                                                                 onClick={() => {
+                                                                                     setHasUnsavedChanges(true);
+                                                                                     handleValueChange(student.id, 'paymentAmount', 0);
+                                                                                     handleValueChange(student.id, 'paymentMethod', '');
+                                                                                     setExtraData(prev => ({ ...prev, [student.id]: 'guest' }));
+                                                                                     setAnsweredPracticePayment(prev => {
+                                                                                         const next = new Set(prev);
+                                                                                         next.add(student.id);
+                                                                                         return next;
+                                                                                     });
+                                                                                 }}
+                                                                                 style={getBtnStyle(isInvClicked, '#f1c40f', '#1a202c')}
+                                                                             >INV</button>
+                                                                         </>
+                                                                     );
+                                                                 })()}
+                                                             </div>
                                                          </div>
-                                                     )}
+                                                      )}
                                                      {type && (
                                                          <button onClick={() => removeExtra(student.id)} style={{ background: 'rgba(231, 76, 60, 0.1)', border: '1px solid rgba(231, 76, 60, 0.2)', color: '#e74c3c', fontSize: '9px', padding: '4px', borderRadius: '4px' }}>Quitar Alumno</button>
                                                      )}

@@ -11,7 +11,8 @@ import {
   CircleCheck,
   Menu,
   LogOut,
-  X
+  X,
+  LayoutDashboard
 } from 'lucide-react';
 
 // Pages
@@ -21,9 +22,11 @@ import Attendance from './pages/Attendance';
 import Classes from './pages/Classes';
 import Reports from './pages/Reports';
 import Payments from './pages/Payments';
+import Welcome from './pages/Welcome';
 
 const iconMap = {
-  Dashboard: Home,
+  Inicio: Home,
+  Dashboard: LayoutDashboard,
   'Asistencia y Pagos': CircleCheck,
   Pagos: Wallet,
   Alumnos: Users,
@@ -33,7 +36,7 @@ const iconMap = {
 
 const MainLayout = ({ user }) => {
   const { hasUnsavedChanges, setHasUnsavedChanges, activePage, setActivePage } = useAppContext();
-  const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [isSidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
 
   // Evitar cerrar pestaña o navegador si hay cambios sin guardar
   useEffect(() => {
@@ -65,13 +68,14 @@ const MainLayout = ({ user }) => {
 
   const renderPage = () => {
     switch (activePage) {
+      case 'Inicio': return <Welcome />;
       case 'Dashboard': return <Dashboard />;
       case 'Alumnos': return <Students />;
       case 'Asistencia y Pagos': return <Attendance />;
       case 'Pagos': return <Payments />;
       case 'Clases': return <Classes />;
       case 'Reportes': return <Reports />;
-      default: return <Attendance />;
+      default: return <Welcome />;
     }
   };
 

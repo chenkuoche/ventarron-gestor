@@ -24,7 +24,7 @@ export const AppProvider = ({ children }) => {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [activePage, setActivePage] = useState('Asistencia y Pagos');
+  const [activePage, setActivePage] = useState('Inicio');
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
