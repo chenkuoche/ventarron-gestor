@@ -43,6 +43,7 @@ const Attendance = () => {
     const [countdown, setCountdown] = useState(10); // Contador para autoguardado
     const [answeredPracticePayment, setAnsweredPracticePayment] = useState(new Set());
     const [showOnlyPending, setShowOnlyPending] = useState(false);
+    const [showPracticesList, setShowPracticesList] = useState(false);
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const lastRemoteSync = React.useRef(null);
 
@@ -493,47 +494,69 @@ const Attendance = () => {
 
         return (
             <div className="attendance-select">
-                <h3 style={{ marginBottom: '20px' }}>Seleccione una clase o evento</h3>
+                <h3 style={{ marginBottom: '20px' }}>{showPracticesList ? 'Prácticas y Eventos' : 'Seleccione una clase'}</h3>
                 
-                {regularGroups.length > 0 && (
+                {!showPracticesList ? (
                     <>
-                        <p style={{ fontSize: '11px', opacity: 0.5, letterSpacing: '1px', marginBottom: '15px' }}>GRUPOS REGULARES</p>
-                        <div className="grid-classes" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px', marginBottom: '40px' }}>
-                            {regularGroups.map(cls => (
-                                <div key={cls.id} className="card flex justify-between align-center" onClick={() => setSelectedClassId(cls.id)} style={{ cursor: 'pointer', transition: 'transform 0.2s ease', padding: '15px' }}>
-                                    <div>
-                                        <p style={{ margin: 0, fontSize: '11px', opacity: 0.5, textTransform: 'uppercase' }}>{cls.day} {cls.time}hs</p>
-                                        <h3 style={{ margin: '5px 0', fontSize: '1.2rem' }}>{cls.name}</h3>
-                                    </div>
-                                    <ChevronRight size={20} opacity={0.3} />
+                        {regularGroups.length > 0 && (
+                            <>
+                                <p style={{ fontSize: '11px', opacity: 0.5, letterSpacing: '1px', marginBottom: '15px' }}>GRUPOS REGULARES</p>
+                                <div className="grid-classes" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px', marginBottom: '25px' }}>
+                                    {regularGroups.map(cls => (
+                                        <div key={cls.id} className="card flex justify-between align-center" onClick={() => setSelectedClassId(cls.id)} style={{ cursor: 'pointer', transition: 'transform 0.2s ease', padding: '15px' }}>
+                                            <div>
+                                                <p style={{ margin: 0, fontSize: '11px', opacity: 0.5, textTransform: 'uppercase' }}>{cls.day} {cls.time}hs</p>
+                                                <h3 style={{ margin: '5px 0', fontSize: '1.2rem' }}>{cls.name}</h3>
+                                            </div>
+                                            <ChevronRight size={20} opacity={0.3} />
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
-                        </div>
+                            </>
+                        )}
+                        {specialEvents.length > 0 && (
+                            <button 
+                                className="btn btn-secondary" 
+                                onClick={() => setShowPracticesList(true)}
+                                style={{ width: '100%', padding: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', fontSize: '14px', border: '1px solid rgba(241, 196, 15, 0.3)', color: '#f1c40f', background: 'rgba(241, 196, 15, 0.05)', transition: 'background-color 0.2s' }}
+                            >
+                                <Calendar size={18} /> VER PRÁCTICAS Y EVENTOS
+                            </button>
+                        )}
                     </>
-                )}
-
-                {specialEvents.length > 0 && (
-                    <>
-                        <p style={{ fontSize: '11px', opacity: 0.5, letterSpacing: '1px', marginBottom: '15px', color: '#f1c40f' }}>PRÁCTICAS Y EVENTOS ESPECIALES</p>
-                        <div className="grid-classes" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
-                            {specialEvents.map(cls => (
-                                <div key={cls.id} className="card flex justify-between align-center" onClick={() => {
-                                    if (cls.date && cls.date !== selectedDate) {
-                                        if (window.confirm(`Este evento está programado para el ${new Date(cls.date + 'T12:00:00').toLocaleDateString('es-UY')}. ¿Deseas cambiar a esa fecha?`)) {
-                                            setSelectedDate(cls.date);
-                                        }
-                                    }
-                                    setSelectedClassId(cls.id);
-                                }} style={{ cursor: 'pointer', background: 'rgba(241, 196, 15, 0.05)', border: '1px solid rgba(241, 196, 15, 0.1)', padding: '15px' }}>
-                                    <div>
-                                        <p style={{ margin: 0, fontSize: '11px', color: '#f1c40f', fontWeight: 'bold' }}>{new Date(cls.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: 'long' })}</p>
-                                        <h3 style={{ margin: '5px 0', fontSize: '1.2rem' }}>{cls.name}</h3>
-                                    </div>
-                                    <Calendar size={20} color="#f1c40f" opacity={0.5} />
+                ) : (
+                    <div style={{ animation: 'fadeIn 0.3s ease' }}>
+                        {specialEvents.length > 0 && (
+                            <>
+                                <p style={{ fontSize: '11px', opacity: 0.5, letterSpacing: '1px', marginBottom: '15px', color: '#f1c40f' }}>PRÁCTICAS Y EVENTOS ESPECIALES</p>
+                                <div className="grid-classes" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px', marginBottom: '25px' }}>
+                                    {specialEvents.map(cls => (
+                                        <div key={cls.id} className="card flex justify-between align-center" onClick={() => {
+                                            if (cls.date && cls.date !== selectedDate) {
+                                                if (window.confirm(`Este evento está programado para el ${new Date(cls.date + 'T12:00:00').toLocaleDateString('es-UY')}. ¿Deseas cambiar a esa fecha?`)) {
+                                                    setSelectedDate(cls.date);
+                                                }
+                                            }
+                                            setSelectedClassId(cls.id);
+                                        }} style={{ cursor: 'pointer', background: 'rgba(241, 196, 15, 0.05)', border: '1px solid rgba(241, 196, 15, 0.1)', padding: '15px' }}>
+                                            <div>
+                                                <p style={{ margin: 0, fontSize: '11px', color: '#f1c40f', fontWeight: 'bold' }}>{new Date(cls.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: 'long' })}</p>
+                                                <h3 style={{ margin: '5px 0', fontSize: '1.2rem' }}>{cls.name}</h3>
+                                            </div>
+                                            <Calendar size={20} color="#f1c40f" opacity={0.5} />
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
-                        </div>
-                    </>
+                            </>
+                        )}
+                        <button 
+                            className="btn btn-secondary" 
+                            onClick={() => setShowPracticesList(false)}
+                            style={{ width: '100%', padding: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', fontSize: '14px', border: '1px solid rgba(255, 255, 255, 0.2)', color: 'white', background: 'rgba(255, 255, 255, 0.05)', transition: 'background-color 0.2s' }}
+                        >
+                            <ArrowLeft size={18} /> VOLVER A GRUPOS REGULARES
+                        </button>
+                    </div>
                 )}
             </div>
         );
@@ -811,9 +834,8 @@ const Attendance = () => {
                                                     {student.email && <span className="no-underline" style={{ fontSize: '10px', opacity: 0.4 }}>{student.email}</span>}
                                                     <div className="flex gap-5 mt-2">
                                                         {type === 'recovery' && !selectedClass.isPractice && <span style={{ fontSize: '9px', background: 'rgba(231, 76, 60, 0.2)', color: '#e74c3c', padding: '2px 5px', borderRadius: '3px' }}>RECUPERA</span>}
-                                                        {type === 'guest' && !selectedClass.isPractice && <span style={{ fontSize: '9px', background: 'rgba(241, 196, 15, 0.2)', color: '#f1c40f', padding: '2px 5px', borderRadius: '3px' }}>INVITADO</span>}
+                                                        {type === 'guest' && <span style={{ fontSize: '9px', background: 'rgba(241, 196, 15, 0.2)', color: '#f1c40f', padding: '2px 5px', borderRadius: '3px' }}>INVITADO</span>}
                                                         {type === 'pl' && !selectedClass.isPractice && <span style={{ fontSize: '9px', background: 'rgba(155, 89, 182, 0.2)', color: '#9b59b6', padding: '2px 5px', borderRadius: '3px', fontWeight: 'bold' }}>PL</span>}
-                                                        {type === 'event' && selectedClass.isPractice && <span style={{ fontSize: '9px', background: 'rgba(255, 255, 255, 0.1)', color: 'rgba(255,255,255,0.5)', padding: '2px 5px', borderRadius: '3px' }}>SISTEMA</span>}
                                                     </div>
                                                 </div>
                                             </td>
@@ -902,6 +924,7 @@ const Attendance = () => {
                                                              <button 
                                                                  className="btn" 
                                                                  onClick={() => {
+                                                                     setHasUnsavedChanges(true); // Asegurar que marque cambios
                                                                      handleValueChange(student.id, 'paymentAmount', selectedClass.classPrice || 0);
                                                                      handleValueChange(student.id, 'paymentMethod', 'cash');
                                                                      setAnsweredPracticePayment(prev => {
@@ -915,6 +938,11 @@ const Attendance = () => {
                                                              <button 
                                                                  className="btn"
                                                                  onClick={() => {
+                                                                     // Si era invitado, quitar esa marca para que figure como deudor
+                                                                     if (extraData[student.id] === 'guest') {
+                                                                         setHasUnsavedChanges(true);
+                                                                         setExtraData(prev => ({ ...prev, [student.id]: 'event' }));
+                                                                     }
                                                                      setAnsweredPracticePayment(prev => {
                                                                          const next = new Set(prev);
                                                                          next.add(student.id);
@@ -923,6 +951,19 @@ const Attendance = () => {
                                                                  }}
                                                                  style={{ padding: '6px 12px', fontSize: '11px', backgroundColor: '#e74c3c', color: 'white', border: 'none', fontWeight: 'bold', borderRadius: '4px' }}
                                                              >NO</button>
+                                                             <button 
+                                                                 className="btn"
+                                                                 onClick={() => {
+                                                                     setHasUnsavedChanges(true);
+                                                                     setExtraData(prev => ({ ...prev, [student.id]: 'guest' }));
+                                                                     setAnsweredPracticePayment(prev => {
+                                                                         const next = new Set(prev);
+                                                                         next.add(student.id);
+                                                                         return next;
+                                                                     });
+                                                                 }}
+                                                                 style={{ padding: '6px 12px', fontSize: '11px', backgroundColor: '#f1c40f', color: '#1a202c', border: 'none', fontWeight: 'bold', borderRadius: '4px' }}
+                                                             >INVITADO</button>
                                                          </div>
                                                      )}
                                                      {type && (
