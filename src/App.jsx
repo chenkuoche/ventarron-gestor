@@ -193,32 +193,112 @@ function App() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a202c', color: 'white' }}>
-        <p>Cargando Ventarrón Gestor...</p>
+      <div style={{ 
+        display: 'flex', 
+        height: '100vh', 
+        width: '100%', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        backgroundColor: '#1a202c', 
+        color: 'white',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        zIndex: 9999
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div className="loading-spinner" style={{ 
+            width: '40px', 
+            height: '40px', 
+            border: '3px solid rgba(255,255,255,0.1)', 
+            borderTop: '3px solid #e74c3c', 
+            borderRadius: '50%', 
+            margin: '0 auto 20px auto',
+            animation: 'spin 1s linear infinite'
+          }}></div>
+          <p style={{ fontSize: '16px', fontWeight: '500', letterSpacing: '0.5px', opacity: 0.8 }}>Cargando Ventarrón Gestor...</p>
+        </div>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a202c', color: 'white', padding: '20px' }}>
-        <div style={{ backgroundColor: '#2d3748', padding: '40px', borderRadius: '12px', textAlign: 'center', maxWidth: '400px', width: '100%', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-          <img src="/logo.png" alt="Ventarrón Logo" style={{ width: '250px', maxWidth: '100%', marginBottom: '20px' }} />
-          <h2 style={{ marginBottom: '10px', fontSize: '1.2rem' }}>Gestor de Asistencias</h2>
-          <p style={{ opacity: 0.6, marginBottom: '30px', fontSize: '14px' }}>Acceso exclusivo para administración.</p>
+      <div style={{ 
+        display: 'flex', 
+        height: '100vh', 
+        width: '100%',
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        background: 'linear-gradient(135deg, #1a202c 0%, #2d3748 100%)', 
+        color: 'white', 
+        padding: '20px',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        zIndex: 9999
+      }}>
+        <div style={{ 
+          backgroundColor: '#2c3e50', 
+          padding: '40px', 
+          borderRadius: '24px', 
+          textAlign: 'center', 
+          maxWidth: '420px', 
+          width: '100%', 
+          boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+          border: '1px solid rgba(255,255,255,0.05)',
+          animation: 'fadeIn 0.6s ease-out'
+        }}>
+          <div style={{ marginBottom: '30px' }}>
+            <img src="/logo.png" alt="Ventarrón Logo" style={{ width: '220px', maxWidth: '100%', height: 'auto', filter: 'drop-shadow(0 5px 15px rgba(0,0,0,0.2))' }} />
+          </div>
+          
+          <div style={{ marginBottom: '35px' }}>
+            <h2 style={{ margin: '0 0 8px 0', fontSize: '1.5rem', fontWeight: '700', letterSpacing: '-0.5px' }}>Gestor de Asistencias</h2>
+            <p style={{ opacity: 0.5, margin: 0, fontSize: '14px' }}>Acceso exclusivo para administración.</p>
+          </div>
           
           {errorVisible && (
-            <div style={{ backgroundColor: '#fed7d7', color: '#822727', padding: '10px', borderRadius: '6px', marginBottom: '20px', fontSize: '13px' }}>
+            <div style={{ backgroundColor: 'rgba(231, 76, 60, 0.15)', color: '#ff7675', padding: '12px', borderRadius: '10px', marginBottom: '25px', fontSize: '13px', border: '1px solid rgba(231, 76, 60, 0.2)' }}>
               {errorVisible}
             </div>
           )}
 
           <button 
             onClick={handleLogin}
+            className="no-underline"
             style={{ 
-              backgroundColor: '#4285F4', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '6px', 
-              cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', 
-              gap: '10px', width: '100%', fontSize: '16px'
+              backgroundColor: '#4285F4', 
+              color: 'white', 
+              border: 'none', 
+              padding: '14px 24px', 
+              borderRadius: '12px', 
+              cursor: 'pointer', 
+              fontWeight: '600', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              gap: '12px', 
+              width: '100%', 
+              fontSize: '16px',
+              transition: 'all 0.3s ease',
+              boxShadow: '0 4px 15px rgba(66, 133, 244, 0.3)'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.backgroundColor = '#3367d6';
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 8px 20px rgba(66, 133, 244, 0.4)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.backgroundColor = '#4285F4';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 15px rgba(66, 133, 244, 0.3)';
             }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="white">

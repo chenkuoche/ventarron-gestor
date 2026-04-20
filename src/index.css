@@ -431,8 +431,8 @@ tr:hover td {
     align-items: stretch !important;
     padding: 12px !important;
     gap: 10px !important;
-    position: relative !important;
-    top: 0 !important;
+    position: sticky !important;
+    top: 70px !important;
   }
 
 }

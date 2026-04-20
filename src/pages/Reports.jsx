@@ -373,7 +373,9 @@ const Reports = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {classBreakdown.map(cls => (
+                            {classBreakdown
+                                .filter(cls => cls.sessionsHeld > 0 || !cls.isPractice) // Mostrar si hubo actividad o si es un grupo regular
+                                .map(cls => (
                                 <tr key={cls.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                     <td style={{ padding: '15px' }}>
                                         <div style={{ fontWeight: 600 }} spellCheck="false" autoCorrect="off" autoCapitalize="none">{cls.name}</div>
