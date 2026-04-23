@@ -223,7 +223,7 @@ const Students = () => {
 
                         <label style={{ marginTop: '10px' }}>Inscribir en Clases:</label>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px' }}>
-                            {classes.map(cls => {
+                            {classes.filter(c => !c.isPractice).map(cls => {
                                 const isEnrolled = (formData.enrolledClasses || []).includes(cls.id);
                                 const isGuest = (formData.guestClasses || []).includes(cls.id);
                                 return (
@@ -264,7 +264,7 @@ const Students = () => {
                                     </div>
                                 );
                             })}
-                            {classes.length === 0 && <p style={{ fontSize: '12px', opacity: 0.5 }}>No hay clases creadas.</p>}
+                            {classes.filter(c => !c.isPractice).length === 0 && <p style={{ fontSize: '12px', opacity: 0.5 }}>No hay clases regulares creadas.</p>}
                         </div>
 
                         <div className="flex gap-10" style={{ marginTop: '10px' }}>
@@ -466,7 +466,7 @@ const Students = () => {
                                             value=""
                                         >
                                             <option value="">+ Cambiar / Agregar a grupo...</option>
-                                            {classes.filter(c => !(viewHistory.enrolledClasses || []).includes(c.id)).map(c => (
+                                            {classes.filter(c => !c.isPractice && !(viewHistory.enrolledClasses || []).includes(c.id)).map(c => (
                                                 <option key={c.id} value={c.id}>{c.name}</option>
                                             ))}
                                         </select>
@@ -555,7 +555,7 @@ const Students = () => {
                                 style={{ marginBottom: 0 }}
                             >
                                 <option value="all">Todos los alumnos</option>
-                                {classes.map(c => (
+                                {classes.filter(c => !c.isPractice).map(c => (
                                     <option key={c.id} value={c.id}>{c.name}</option>
                                 ))}
                             </select>

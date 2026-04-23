@@ -37,7 +37,20 @@ const Payments = () => {
 
             return true;
         })
-        .sort((a, b) => b.date.localeCompare(a.date));
+        .sort((a, b) => {
+            // 1. Prioridad: Fecha de la clase (descendente)
+            if (a.date !== b.date) return b.date.localeCompare(a.date);
+
+            // 2. Segunda prioridad: Hora de la clase (descendente, ej: 21:00 > 19:30)
+            const classA = classes.find(c => c.id === a.classId);
+            const classB = classes.find(c => c.id === b.classId);
+            const timeA = classA?.time || '00:00';
+            const timeB = classB?.time || '00:00';
+            if (timeA !== timeB) return timeB.localeCompare(timeA);
+
+            // 3. Tercera prioridad: Última actualización (descendente)
+            return (b.updatedAt || b.date).localeCompare(a.updatedAt || a.date);
+        });
 
     return (
         <div className="payments-page">

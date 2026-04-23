@@ -7,10 +7,13 @@ import {
 } from 'recharts';
 
 const Dashboard = () => {
-    const { students, classes, records, setActivePage, setSelectedClassId } = useAppContext();
+    const { students, classes, records, setActivePage, setSelectedClassId, setSelectedDate } = useAppContext();
 
-    const handleViewList = (classId) => {
-        setSelectedClassId(classId);
+    const handleViewList = (cls) => {
+        if ((cls.isPractice || cls.date) && cls.date) {
+            setSelectedDate(cls.date);
+        }
+        setSelectedClassId(cls.id);
         setActivePage('Asistencia y Pagos');
     };
 
@@ -91,7 +94,29 @@ const Dashboard = () => {
     });
 
     const totalIncome = currentMonthRecords.reduce((acc, r) => acc + (parseFloat(r.paymentAmount) || 0), 0);
-    const todayClasses = classes.filter(c => c.day === todayName);
+    // Para identificar hoy en formato YYYY-MM-DD local
+    const todayStr = today.getFullYear() + '-' + 
+                    String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(today.getDate()).padStart(2, '0');
+
+    const todayClasses = classes.filter(c => {
+        // Consideramos práctica si tiene el flag o si tiene fecha específica guardada que no sea de creación
+        // Para ser seguros, si tiene el flag isPractice, solo mostramos si es hoy
+        if (c.isPractice === true || c.isPractice === 'true') {
+            return c.date === todayStr;
+        }
+        
+        // Anti-bug radical: si el nombre contiene palabras de evento único y la fecha NO es hoy,
+        // lo ocultamos del dashboard principal para evitar ruido de eventos pasados.
+        const nameLower = c.name.toLowerCase();
+        const isOldEventByContent = c.date && c.date !== todayStr && 
+            (nameLower.includes('cumpartida') || nameLower.includes('prueba') || nameLower.includes('abril'));
+        
+        if (isOldEventByContent) return false;
+
+        // Si no es un evento detectado, usamos la lógica de día recurrente
+        return c.day === todayName;
+    });
 
     const stats = [
         { label: 'Ingresos (Mes)', value: `$${totalIncome.toLocaleString()}`, icon: Wallet, color: '#e74c3c' },
@@ -141,6 +166,7 @@ const Dashboard = () => {
                                 <Tooltip 
                                     contentStyle={{ backgroundColor: '#2c3e50', border: 'none', borderRadius: '8px', color: 'white', fontSize: '12px' }}
                                     itemStyle={{ color: 'white' }}
+                                    cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
                                 />
                                 <Bar yAxisId="left" dataKey="ingresos" fill="#3498db" radius={[4, 4, 0, 0]} barSize={15} />
                                 <Bar yAxisId="right" dataKey="asistencias" fill="#e74c3c" radius={[4, 4, 0, 0]} barSize={15} />
@@ -170,6 +196,7 @@ const Dashboard = () => {
                                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#bdc3c7', fontSize: 10}} />
                                 <Tooltip 
                                     contentStyle={{ backgroundColor: '#2c3e50', border: 'none', borderRadius: '8px', color: 'white', fontSize: '12px' }}
+                                    cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
                                 />
                                 <Bar dataKey="pasada" fill="rgba(255,255,255,0.3)" radius={[3, 3, 0, 0]} barSize={12} />
                                 <Bar dataKey="actual" fill="#2ecc71" radius={[3, 3, 0, 0]} barSize={12} />
@@ -202,7 +229,7 @@ const Dashboard = () => {
                                             <h4 style={{ margin: 0, fontSize: '1rem' }}>{cls.name}</h4>
                                             <p style={{ opacity: 0.6, fontSize: '11px', margin: '4px 0 0' }}><Clock size={10} /> {cls.time}hs</p>
                                         </div>
-                                        <button onClick={() => handleViewList(cls.id)} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }}>Lista</button>
+                                        <button onClick={() => handleViewList(cls)} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }}>Lista</button>
                                     </div>
                                 </div>
                             ))}
@@ -214,24 +241,41 @@ const Dashboard = () => {
 
                 <section>
                     <h3 style={{ margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.1rem' }}>
-                        <Clock size={18} color="#3498db" /> Últimos Movimientos
+                        <Wallet size={18} color="#2ecc71" /> Últimos Pagos
                     </h3>
                     <div className="card shadow-sm" style={{ padding: '0', marginBottom: 0, overflow: 'hidden' }}>
-                        {records.slice(-5).reverse().map((r, i) => {
-                            const student = students.find(s => s.id === r.studentId);
-                            const cls = classes.find(c => c.id === r.classId);
-                            return (
-                                <div key={i} style={{ padding: '12px 15px', borderBottom: i === 4 ? 'none' : '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div>
-                                        <p style={{ margin: 0, fontWeight: 600, fontSize: '13px' }}>{student?.name || 'Invitado'}</p>
-                                        <p style={{ margin: 0, fontSize: '9px', opacity: 0.4 }}>{cls?.name} • {r.date.split('-').reverse().join('/')}</p>
+                        {[...records]
+                            .filter(r => (parseFloat(r.paymentAmount) || 0) > 0)
+                            .sort((a, b) => {
+                                // 1. Prioridad: Fecha de la clase (descendente)
+                                if (a.date !== b.date) return b.date.localeCompare(a.date);
+
+                                // 2. Segunda prioridad: Hora de la clase (descendente)
+                                const classA = classes.find(c => c.id === a.classId);
+                                const classB = classes.find(c => c.id === b.classId);
+                                const timeA = classA?.time || '00:00';
+                                const timeB = classB?.time || '00:00';
+                                if (timeA !== timeB) return timeB.localeCompare(timeA);
+
+                                // 3. Tercera prioridad: Última actualización (descendente)
+                                return (b.updatedAt || b.date).localeCompare(a.updatedAt || a.date);
+                            })
+                            .slice(0, 5)
+                            .map((r, i) => {
+                                const student = students.find(s => s.id === r.studentId);
+                                const cls = classes.find(c => c.id === r.classId);
+                                return (
+                                    <div key={i} style={{ padding: '12px 15px', borderBottom: i === 4 ? 'none' : '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                            <p style={{ margin: 0, fontWeight: 600, fontSize: '13px' }}>{student?.name || 'Invitado'}</p>
+                                            <p style={{ margin: 0, fontSize: '9px', opacity: 0.4 }}>{cls?.name} • {r.date.split('-').reverse().join('/')}</p>
+                                        </div>
+                                        <span style={{ fontWeight: 700, fontSize: '13px', color: '#2ecc71' }}>
+                                            +${r.paymentAmount}
+                                        </span>
                                     </div>
-                                    <span style={{ fontWeight: 700, fontSize: '13px', color: r.paymentAmount > 0 ? '#2ecc71' : 'rgba(255,255,255,0.2)' }}>
-                                        {r.paymentAmount > 0 ? `+$${r.paymentAmount}` : r.present ? 'ASISTIÓ' : '---'}
-                                    </span>
-                                </div>
-                            );
-                        })}
+                                );
+                            })}
                     </div>
                 </section>
             </div>
