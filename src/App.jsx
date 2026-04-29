@@ -12,7 +12,8 @@ import {
   Menu,
   LogOut,
   X,
-  LayoutDashboard
+  LayoutDashboard,
+  Cake
 } from 'lucide-react';
 
 // Pages
@@ -23,6 +24,7 @@ import Classes from './pages/Classes';
 import Reports from './pages/Reports';
 import Payments from './pages/Payments';
 import Welcome from './pages/Welcome';
+import Birthdays from './pages/Birthdays';
 
 const iconMap = {
   Inicio: Home,
@@ -31,6 +33,7 @@ const iconMap = {
   Pagos: Wallet,
   Alumnos: Users,
   Clases: Calendar,
+  Cumpleaños: Cake,
   Reportes: PieChart,
 };
 
@@ -74,6 +77,7 @@ const MainLayout = ({ user }) => {
       case 'Asistencia y Pagos': return <Attendance />;
       case 'Pagos': return <Payments />;
       case 'Clases': return <Classes />;
+      case 'Cumpleaños': return <Birthdays />;
       case 'Reportes': return <Reports />;
       default: return <Welcome />;
     }

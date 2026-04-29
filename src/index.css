@@ -436,3 +436,17 @@ tr:hover td {
   }
 
 }
+@media (max-width: 600px) {
+  .month-selector {
+    margin: 0 auto !important;
+  }
+
+  .calendar-day {
+    padding: 5px !important;
+    min-height: 60px !important;
+  }
+
+  .calendar-day span {
+    font-size: 11px !important;
+  }
+}

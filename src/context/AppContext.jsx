@@ -27,6 +27,8 @@ export const AppProvider = ({ children }) => {
   const [activePage, setActivePage] = useState('Inicio');
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [birthdayEmailsEnabled, setBirthdayEmailsEnabled] = useState(false);
+
 
   // 1. Sincronizar Alumnos en tiempo real
   useEffect(() => {
@@ -69,6 +71,17 @@ export const AppProvider = ({ children }) => {
     });
     return () => unsubscribe();
   }, []);
+
+  // 4. Sincronizar Configuración del Administrador
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'admin'), (docSnap) => {
+      if (docSnap.exists()) {
+        setBirthdayEmailsEnabled(docSnap.data().birthdayEmailsEnabled || false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
 
   const addStudent = async (student) => {
     await addDoc(collection(db, 'students'), {
@@ -139,6 +152,11 @@ export const AppProvider = ({ children }) => {
     await batch.commit();
   };
 
+  const toggleBirthdayEmails = async (enabled) => {
+    await setDoc(doc(db, 'settings', 'admin'), { birthdayEmailsEnabled: enabled }, { merge: true });
+  };
+
+
   return (
     <AppContext.Provider value={{
       students, addStudent, updateStudent, deleteStudent,
@@ -149,7 +167,9 @@ export const AppProvider = ({ children }) => {
       selectedClassId, setSelectedClassId,
       selectedDate, setSelectedDate,
       loading,
+      birthdayEmailsEnabled, toggleBirthdayEmails,
       sendEmail: async (data) => {
+
         const mailer = httpsCallable(functions, 'sendEmail');
         return await mailer(data);
       },

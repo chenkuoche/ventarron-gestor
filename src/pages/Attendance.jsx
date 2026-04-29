@@ -24,7 +24,8 @@ import {
     Copy,
     DollarSign,
     Users,
-    EyeOff
+    EyeOff,
+    Cake
 } from 'lucide-react';
 
 const Attendance = () => {
@@ -40,7 +41,7 @@ const Attendance = () => {
     const [emailStatus, setEmailStatus] = useState({}); // { studentId: 'sending' | 'sent' | 'error' }
     const [forceOpen, setForceOpen] = useState(false);
     const [viewHistory, setViewHistory] = useState(null);
-    const [countdown, setCountdown] = useState(10); // Contador para autoguardado
+    const [countdown, setCountdown] = useState(5); // Contador para autoguardado
     const [answeredPracticePayment, setAnsweredPracticePayment] = useState(new Set());
     const [showOnlyPending, setShowOnlyPending] = useState(false);
     const [showPracticesList, setShowPracticesList] = useState(false);
@@ -66,11 +67,11 @@ const Attendance = () => {
                         receiptSent: record.receiptSent || false,
                         waReceiptSent: record.waReceiptSent || false
                     };
-                    if (!(s.enrolledClasses || []).includes(selectedClassId)) {
-                        if (record.isGuest) existingExtra[s.id] = 'guest';
-                        else if (record.isPL) existingExtra[s.id] = 'pl';
-                        else if (record.isRecovery) existingExtra[s.id] = 'recovery';
-                        else existingExtra[s.id] = 'recovery'; // Fallback
+                    if (record.isGuest) existingExtra[s.id] = 'guest';
+                    else if (record.isPL) existingExtra[s.id] = 'pl';
+                    else if (record.isRecovery) existingExtra[s.id] = 'recovery';
+                    else if (!(s.enrolledClasses || []).includes(selectedClassId)) {
+                        existingExtra[s.id] = 'recovery'; // Fallback
                     }
                 } else if ((s.enrolledClasses || []).includes(selectedClassId)) {
                     initial[s.id] = {
@@ -128,19 +129,19 @@ const Attendance = () => {
     // 1c. Lógica de AUTOGUARDADO con contador visual
     useEffect(() => {
         if (!hasUnsavedChanges || isSaving || !selectedClassId) {
-            setCountdown(10);
+            setCountdown(5);
             return;
         }
 
-        // Cada vez que cambian los datos, reiniciamos el contador a 10
-        setCountdown(10);
+        // Cada vez que cambian los datos, reiniciamos el contador a 5
+        setCountdown(5);
 
         const interval = setInterval(() => {
             setCountdown(prev => {
                 if (prev <= 1) {
                     clearInterval(interval);
                     handleSave();
-                    return 10;
+                    return 5;
                 }
                 return prev - 1;
             });
@@ -817,6 +818,8 @@ const Attendance = () => {
                                     
                                     const isReceiptSentPersistent = rec.receiptSent || (amountNum === 0 && activePlan?.receiptSent);
                                     const currentEmailStatus = studentStatus || (isReceiptSentPersistent ? 'done' : null);
+                                    
+                                    const isBirthday = student.birthDay && student.birthMonth && parseInt(student.birthDay) === parseInt(selectedDate.split('-')[2]) && parseInt(student.birthMonth) === parseInt(selectedDate.split('-')[1]);
 
                                     return (
                                         <tr key={student.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -828,9 +831,12 @@ const Attendance = () => {
                                                 >
                                                     <span 
                                                         className="no-underline"
-                                                        style={{ fontWeight: 600, fontSize: '15px', color: '#fff' }} 
+                                                        style={{ fontWeight: 600, fontSize: '15px', color: '#fff', display: 'flex', alignItems: 'center', gap: '5px' }} 
                                                         spellCheck="false" autoCorrect="off" autoCapitalize="none"
-                                                    >{student.name}</span>
+                                                    >
+                                                        {student.name}
+                                                        {isBirthday && <Cake size={14} color="#f1c40f" title="¡Es su cumpleaños!" />}
+                                                    </span>
                                                     {student.email && <span className="no-underline" style={{ fontSize: '10px', opacity: 0.4 }}>{student.email}</span>}
                                                     <div className="flex gap-5 mt-2">
                                                         {type === 'recovery' && !selectedClass.isPractice && <span style={{ fontSize: '9px', background: 'rgba(231, 76, 60, 0.2)', color: '#e74c3c', padding: '2px 5px', borderRadius: '3px' }}>RECUPERA</span>}

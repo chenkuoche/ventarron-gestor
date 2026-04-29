@@ -596,3 +596,78 @@ exports.sendMonthlyReport = onSchedule({
         logger.error("Error crítico en sendMonthlyReport:", err);
     }
 });
+
+/**
+ * Tarea programada: Todos los días a las 9:00 AM (Zona Montevideo)
+ * Verifica si hay cumpleaños hoy y si las notificaciones están activas.
+ */
+exports.sendBirthdayNotifications = onSchedule({
+    schedule: "0 9 * * *", // 9:00 AM todos los días
+    timeZone: "America/Montevideo",
+    secrets: ["RESEND_API_KEY"],
+    timeoutSeconds: 300
+}, async (event) => {
+    try {
+        // 1. Verificar si las notificaciones están habilitadas
+        const settingsDoc = await db.collection('settings').doc('admin').get();
+        if (!settingsDoc.exists || settingsDoc.data().birthdayEmailsEnabled !== true) {
+            logger.info("Notificaciones de cumpleaños deshabilitadas o no configuradas. Saltando.");
+            return;
+        }
+
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1; // 1-12
+        const currentDay = now.getDate(); // 1-31
+
+        // 2. Obtener alumnos
+        const studentsSnap = await db.collection('students').get();
+        const students = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // 3. Filtrar los que cumplen hoy
+        const birthdayStudents = students.filter(s => 
+            s.birthMonth && s.birthDay && 
+            Number(s.birthMonth) === currentMonth && 
+            Number(s.birthDay) === currentDay
+        );
+
+        if (birthdayStudents.length === 0) {
+            logger.info(`No hay cumpleaños registrados para el día de hoy (${currentDay}/${currentMonth}).`);
+            return;
+        }
+
+        // 4. Enviar email al administrador
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        
+        let studentsListHtml = birthdayStudents.map(s => `<li style="margin-bottom: 10px;"><strong>${s.name}</strong>${s.phone ? `<br><a href="https://wa.me/${s.phone.replace(/\D/g, '')}" style="color: #2ecc71; font-size: 14px; text-decoration: none;">Enviar WhatsApp</a>` : ''}</li>`).join('');
+
+        const { data, error } = await resend.emails.send({
+            from: "Ventarrón Gestión <info@escueladetangoventarron.com>",
+            to: ["escueladetangoventarron@gmail.com"],
+            subject: `🎂 Cumpleaños de hoy: ${birthdayStudents.map(s => s.name).join(', ')}`,
+            html: `
+                <div style="font-family: sans-serif; color: #2c3e50; line-height: 1.6; max-width: 500px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 10px;">
+                    <div style="text-align: center; margin-bottom: 25px;">
+                        <img src="https://asistencias-ventarron.web.app/logo_escuela_final.png" alt="Ventarrón" style="max-width: 250px; height: auto;" />
+                    </div>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;"/>
+                    <h2 style="color: #e67e22; text-align: center;">¡Avisos de Cumpleaños! 🎉</h2>
+                    <p>Hola, este es un aviso automático de que hoy <strong>${currentDay}/${currentMonth}</strong> cumplen años los siguientes alumnos:</p>
+                    <ul style="background: #f9f9f9; padding: 15px 15px 15px 35px; border-radius: 8px;">
+                        ${studentsListHtml}
+                    </ul>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;"/>
+                    <p style="font-size: 10px; opacity: 0.4; text-align: center;">Este es un recordatorio automático del sistema de administración de Ventarrón.<br>Puedes desactivar esto desde la pestaña de Cumpleaños en la app.</p>
+                </div>
+            `
+        });
+
+        if (error) {
+            logger.error("Error enviando reporte de cumpleaños:", error);
+        } else {
+            logger.info(`Reporte de cumpleaños enviado con éxito. ID: ${data?.id}`);
+        }
+
+    } catch (error) {
+        logger.error("Error crítico en sendBirthdayNotifications:", error);
+    }
+});

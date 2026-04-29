@@ -8,7 +8,7 @@ const Students = () => {
     const [isEditing, setIsEditing] = useState(null);
     const [viewHistory, setViewHistory] = useState(null);
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-    const [formData, setFormData] = useState({ name: '', phone: '', email: '', enrolledClasses: [], guestClasses: [] });
+    const [formData, setFormData] = useState({ name: '', phone: '', email: '', enrolledClasses: [], guestClasses: [], birthDay: '', birthMonth: '' });
     const [showExportModal, setShowExportModal] = useState(false);
     const [exportConfig, setExportConfig] = useState({
         filterClass: 'all',
@@ -29,7 +29,7 @@ const Students = () => {
         } else {
             addStudent(formData);
         }
-        setFormData({ name: '', phone: '', email: '', enrolledClasses: [], guestClasses: [] });
+        setFormData({ name: '', phone: '', email: '', enrolledClasses: [], guestClasses: [], birthDay: '', birthMonth: '' });
     };
 
     const handleEdit = (student) => {
@@ -39,14 +39,16 @@ const Students = () => {
             phone: student.phone,
             email: student.email,
             enrolledClasses: student.enrolledClasses || [],
-            guestClasses: student.guestClasses || []
+            guestClasses: student.guestClasses || [],
+            birthDay: student.birthDay || '',
+            birthMonth: student.birthMonth || ''
         });
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const cancelEdit = () => {
         setIsEditing(null);
-        setFormData({ name: '', phone: '', email: '', enrolledClasses: [], guestClasses: [] });
+        setFormData({ name: '', phone: '', email: '', enrolledClasses: [], guestClasses: [], birthDay: '', birthMonth: '' });
     };
 
     const toggleClass = (classId, type = 'regular') => {
@@ -220,6 +222,33 @@ const Students = () => {
                             value={formData.email}
                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         />
+
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                            <div style={{ flex: 1 }}>
+                                <label>Día Cumpleaños (Opcional)</label>
+                                <select 
+                                    value={formData.birthDay} 
+                                    onChange={(e) => setFormData({ ...formData, birthDay: e.target.value })}
+                                >
+                                    <option value="">Día</option>
+                                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                        <option key={day} value={day}>{day}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <label>Mes Cumpleaños (Opcional)</label>
+                                <select 
+                                    value={formData.birthMonth} 
+                                    onChange={(e) => setFormData({ ...formData, birthMonth: e.target.value })}
+                                >
+                                    <option value="">Mes</option>
+                                    {months.map((m, index) => (
+                                        <option key={index + 1} value={index + 1}>{m}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
 
                         <label style={{ marginTop: '10px' }}>Inscribir en Clases:</label>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px' }}>
