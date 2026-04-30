@@ -371,24 +371,18 @@ exports.triggerManualReminders = onCall({
 
 /**
  * Tarea programada: Reporte Mensual General y Planillas por Clase
- * Se ejecuta a las 23:00 de los días 28, 29, 30 y 31.
- * Verifica si es el último día del mes antes de proceder.
+ * Se ejecuta a las 9:00 del día 1 de cada mes.
+ * Genera el reporte del mes anterior.
  */
 exports.sendMonthlyReport = onSchedule({
-    schedule: "0 23 28-31 * *",
+    schedule: "0 9 1 * *",
     timeZone: "America/Montevideo",
     secrets: ["RESEND_API_KEY"],
     timeoutSeconds: 540 // 9 minutos máximo
 }, async (event) => {
-    // 1. Verificar si es el último día del mes
+    // 1. Obtener la fecha para el mes anterior
     const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-
-    if (tomorrow.getDate() !== 1) {
-        logger.info("Hoy no es el último día del mes. No se genera reporte.");
-        return;
-    }
+    const targetDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
 
     const resend = new Resend(process.env.RESEND_API_KEY);
     const months = [
@@ -396,8 +390,8 @@ exports.sendMonthlyReport = onSchedule({
         'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
     ];
 
-    const selectedMonth = today.getMonth();
-    const selectedYear = today.getFullYear();
+    const selectedMonth = targetDate.getMonth();
+    const selectedYear = targetDate.getFullYear();
     const monthStr = (selectedMonth + 1).toString().padStart(2, '0');
     const yearMonth = `${selectedYear}-${monthStr}`;
 
