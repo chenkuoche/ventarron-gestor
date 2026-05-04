@@ -12,15 +12,18 @@ const db = getFirestore();
  * Helper: Obtiene la lista de alumnos que deben mensualidad este mes
  * según los criterios: inscrito, ha asistido alguna vez y no ha pagado.
  */
-async function getStudentsToRemind(db) {
+async function getStudentsToRemind(db, targetMonthPrefix) {
     const now = new Date();
-    const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const monthPrefix = targetMonthPrefix || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     // 1. Obtener alumnos, clases y registros
     const [studentsSnap, classesSnap, paymentsSnap] = await Promise.all([
         db.collection('students').get(),
         db.collection('classes').get(),
-        db.collection('attendance_records').where('date', '>=', `${monthPrefix}-01`).get()
+        db.collection('attendance_records')
+            .where('date', '>=', `${monthPrefix}-01`)
+            .where('date', '<=', `${monthPrefix}-31`)
+            .get()
     ]);
 
     const students = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -286,7 +289,8 @@ exports.getPendingReminders = onCall({
 }, async (request) => {
     if (!request.auth) throw new Error("Sin permisos.");
     try {
-        const pending = await getStudentsToRemind(db);
+        const monthPrefix = request.data?.monthPrefix;
+        const pending = await getStudentsToRemind(db, monthPrefix);
         return {
             success: true,
             students: pending.map(s => ({
@@ -318,8 +322,9 @@ exports.triggerManualReminders = onCall({
     const resend = new Resend(process.env.RESEND_API_KEY);
 
     try {
-        const pending = await getStudentsToRemind(db);
-        logger.info(`Disparo manual de recordatorios para ${pending.length} pendientes.`);
+        const monthPrefix = request.data?.monthPrefix;
+        const pending = await getStudentsToRemind(db, monthPrefix);
+        logger.info(`Disparo manual de recordatorios para ${pending.length} pendientes en el mes ${monthPrefix || 'actual'}.`);
 
         for (const student of pending) {
             try {

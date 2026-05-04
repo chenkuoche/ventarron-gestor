@@ -441,7 +441,7 @@ const Reports = () => {
                                 onClick={async () => {
                                     setIsLoadingPending(true);
                                     try {
-                                        const res = await getPendingReminders();
+                                        const res = await getPendingReminders({ monthPrefix: yearMonth });
                                         if (res.data.success) {
                                             setPendingReminders(res.data.students);
                                         } else {
@@ -467,7 +467,7 @@ const Reports = () => {
                                         if (window.confirm(`¿Estás seguro de enviar recordatorios REALES a los ${pendingReminders.length} alumnos de la lista?`)) {
                                             setIsSending(true);
                                             try {
-                                                const res = await triggerManualReminders();
+                                                const res = await triggerManualReminders({ monthPrefix: yearMonth });
                                                 if (res.data.success) {
                                                     alert(`¡Proceso completado! Se enviaron ${res.data.count} recordatorios.`);
                                                     setPendingReminders(null);
