@@ -626,24 +626,46 @@ const Attendance = () => {
         }
     });
 
+    const todayObj = new Date();
+    const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+    const isToday = selectedDate === todayStr;
+
+    const attendanceCount = Object.keys(studentRecords).filter(id => id !== 'NO_CLASS' && studentRecords[id]?.present).length;
+
     return (
         <div className="attendance-form">
-            <header className="card attendance-header flex justify-between align-center" style={{ marginBottom: '20px', padding: '15px 20px', position: 'sticky', top: '70px', zIndex: 10, backgroundColor: 'rgba(52, 73, 94, 0.95)', backdropFilter: 'blur(10px)' }}>
+            <header className="card attendance-header flex justify-between align-center" style={{ marginBottom: '20px', padding: '15px 20px', position: 'sticky', top: '70px', zIndex: 10, backgroundColor: isToday ? 'rgba(52, 73, 94, 0.95)' : 'rgba(211, 84, 0, 0.95)', borderBottom: isToday ? 'none' : '2px solid #e67e22', backdropFilter: 'blur(10px)', transition: 'background-color 0.3s' }}>
                 <div className="flex align-center gap-15">
-                    <button className="btn btn-secondary" style={{ padding: '8px' }} onClick={handleExit}>
+                    <button className="btn btn-secondary" style={{ padding: '8px', borderColor: isToday ? 'var(--border-color)' : 'rgba(255,255,255,0.3)', color: 'white' }} onClick={handleExit}>
                         <ArrowLeft size={18} />
                     </button>
                     <div className="flex align-center gap-10">
                         <div>
-                            <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{selectedClass?.name}</h3>
+                            <h3 style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '10px', color: 'white' }}>
+                                {selectedClass?.name}
+                                {!isToday && <span style={{ fontSize: '10px', backgroundColor: '#e67e22', padding: '3px 8px', borderRadius: '12px', fontWeight: 'bold', letterSpacing: '0.5px' }}>OTRA FECHA</span>}
+                            </h3>
                             <div className="flex align-center gap-5">
                                 <button className="btn btn-secondary" style={{ padding: '2px', background: 'none', border: 'none' }} onClick={() => moveDate(-7)}>
-                                    <ChevronLeft size={16} opacity={0.6}/>
+                                    <ChevronLeft size={16} opacity={0.6} color="white" />
                                 </button>
-                                <input type="date" value={selectedDate} onChange={(e) => handleDateChange(e.target.value)} style={{ background: 'none', border: 'none', color: 'white', padding: 0, fontSize: '12px', opacity: 0.6, marginBottom: 0, width: '115px' }} />
+                                <input type="date" value={selectedDate} onChange={(e) => handleDateChange(e.target.value)} style={{ background: 'none', border: 'none', color: 'white', padding: 0, fontSize: '12px', opacity: isToday ? 0.6 : 1, fontWeight: isToday ? 'normal' : 'bold', marginBottom: 0, width: '115px' }} />
                                 <button className="btn btn-secondary" style={{ padding: '2px', background: 'none', border: 'none' }} onClick={() => moveDate(7)}>
-                                    <ChevronRight size={16} opacity={0.6}/>
+                                    <ChevronRight size={16} opacity={0.6} color="white" />
                                 </button>
+                                {!isToday && (
+                                    <button 
+                                        className="btn" 
+                                        style={{ fontSize: '10px', padding: '2px 8px', background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', marginLeft: '5px', backdropFilter: 'blur(5px)' }}
+                                        onClick={() => handleDateChange(todayStr)}
+                                    >
+                                        VOLVER A HOY
+                                    </button>
+                                )}
+                            </div>
+                            <div style={{ fontSize: '11px', opacity: 0.8, color: 'white', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: attendanceCount > 0 ? '#2ecc71' : 'rgba(255,255,255,0.4)', transition: 'background-color 0.3s ease' }}></span>
+                                {attendanceCount === 1 ? '1 asistencia' : `${attendanceCount} asistencias`}
                             </div>
                         </div>
                         <button 
@@ -677,7 +699,7 @@ const Attendance = () => {
                         }}>
                             {feedbackMsg || (
                                 <>
-                                    <span style={{ display: 'inline-block', width: '20px', height: '20px', borderRadius: '50%', border: '2px solid #f1c40f', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>
+                                    <span style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid #f1c40f', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>
                                         {countdown}
                                     </span>
                                     Cambios pendientes...

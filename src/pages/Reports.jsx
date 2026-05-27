@@ -139,11 +139,14 @@ const Reports = () => {
     const totalAttendancesMonth = classBreakdown.reduce((acc, c) => acc + c.totalAttendances, 0);
 
     const exportToCSV = () => {
-        const headers = ["Clase", "Dia/Hora", "Sesiones", "Ingreso Total", "Efectivo", "Transferencia", "Alquiler", "Ganancia Total", "División", "Ganancia Final"];
+        const headers = ["Clase", "Dia/Hora", "Sesiones", "Asistencias Totales", "Asistencias PL", "Ingreso PL", "Ingreso Total", "Efectivo", "Transferencia", "Alquiler", "Ganancia Total", "División", "Ganancia Final"];
         const rows = classBreakdown.map(c => [
             c.name,
             `${c.day} ${c.time}`,
             c.sessionsHeld,
+            c.totalAttendances,
+            c.plAttendances,
+            c.plAttendances * (c.plPrice || 249),
             c.totalIncome,
             c.cashIncome,
             c.transferIncome,
@@ -153,9 +156,16 @@ const Reports = () => {
             c.userProfit
         ]);
 
+        const totalPL = classBreakdown.reduce((acc, c) => acc + c.plAttendances, 0);
+        const totalPLIncome = classBreakdown.reduce((acc, c) => acc + (c.plAttendances * (c.plPrice || 249)), 0);
+
         const csvContent = [
             headers.join(","),
-            ...rows.map(row => row.join(","))
+            ...rows.map(row => row.join(",")),
+            "",
+            "RESUMEN PASE LIBRE (PL)",
+            `Total Asistencias PL en el mes:,${totalPL}`,
+            `Ingreso Estimado por Pase Libre:,$${totalPLIncome}`
         ].join("\n");
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
