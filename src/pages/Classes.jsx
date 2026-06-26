@@ -14,8 +14,21 @@ const Classes = () => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        
+        let computedDay = formData.day;
+        if (activeTab === 'practice' && formData.date) {
+            const dayOfWeekMap = {
+                'Sunday': 'Domingo', 'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
+                'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado'
+            };
+            const dObj = new Date(formData.date + 'T12:00:00');
+            const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
+            computedDay = dayOfWeekMap[dNameEn] || 'Martes';
+        }
+
         const dataToSave = {
             ...formData,
+            day: computedDay,
             isPractice: activeTab === 'practice'
         };
         
@@ -214,6 +227,24 @@ const Classes = () => {
                                     value={formData.date}
                                     onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                                 />
+                                <div className="mobile-form-row">
+                                    <div style={{ width: '100%', maxWidth: '100%' }}>
+                                        <label>Hora Inicio</label>
+                                        <input
+                                            type="time"
+                                            value={formData.time}
+                                            onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                                        />
+                                    </div>
+                                    <div style={{ width: '100%', maxWidth: '100%' }}>
+                                        <label>Hora Fin</label>
+                                        <input
+                                            type="time"
+                                            value={formData.endTime}
+                                            onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
                                 <div className="mobile-form-row">
                                     <div style={{ width: '100%', maxWidth: '100%' }}>
                                         <label>Costo Alumno ($)</label>

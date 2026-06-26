@@ -140,21 +140,37 @@ const Reports = () => {
 
     const exportToCSV = () => {
         const headers = ["Clase", "Dia/Hora", "Sesiones", "Asistencias Totales", "Asistencias PL", "Ingreso PL", "Ingreso Total", "Efectivo", "Transferencia", "Alquiler", "Ganancia Total", "División", "Ganancia Final"];
-        const rows = classBreakdown.map(c => [
-            c.name,
-            `${c.day} ${c.time}`,
-            c.sessionsHeld,
-            c.totalAttendances,
-            c.plAttendances,
-            c.plAttendances * (c.plPrice || 249),
-            c.totalIncome,
-            c.cashIncome,
-            c.transferIncome,
-            c.totalRent,
-            c.profitBeforeSplit,
-            c.profitSplit === 1 ? "100%" : "50/50",
-            c.userProfit
-        ]);
+        const rows = classBreakdown
+            .filter(c => c.sessionsHeld > 0 || !c.isPractice)
+            .map(c => {
+                const dayOfWeekMap = {
+                    'Sunday': 'Domingo', 'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
+                    'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado'
+                };
+                let dayTimeStr = `${c.day} ${c.time}`;
+                if (c.isPractice && c.date) {
+                    const dObj = new Date(c.date + 'T12:00:00');
+                    const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
+                    const dayName = dayOfWeekMap[dNameEn] || c.day;
+                    const datePart = new Date(c.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' });
+                    dayTimeStr = `${dayName} ${datePart} ${c.time || ''}`.trim();
+                }
+                return [
+                    c.name,
+                    dayTimeStr,
+                    c.sessionsHeld,
+                    c.totalAttendances,
+                    c.plAttendances,
+                    c.plAttendances * (c.plPrice || 249),
+                    c.totalIncome,
+                    c.cashIncome,
+                    c.transferIncome,
+                    c.totalRent,
+                    c.profitBeforeSplit,
+                    c.profitSplit === 1 ? "100%" : "50/50",
+                    c.userProfit
+                ];
+            });
 
         const totalPL = classBreakdown.reduce((acc, c) => acc + c.plAttendances, 0);
         const totalPLIncome = classBreakdown.reduce((acc, c) => acc + (c.plAttendances * (c.plPrice || 249)), 0);
@@ -165,7 +181,14 @@ const Reports = () => {
             "",
             "RESUMEN PASE LIBRE (PL)",
             `Total Asistencias PL en el mes:,${totalPL}`,
-            `Ingreso Estimado por Pase Libre:,$${totalPLIncome}`
+            `Ingreso Estimado por Pase Libre:,$${totalPLIncome}`,
+            "",
+            "RESUMEN FINANCIERO GENERAL",
+            `Ingresos Brutos Totales:, $${totalMonthlyIncome}`,
+            `Total Efectivo:, $${totalMonthlyCash}`,
+            `Total Transferencias:, $${totalMonthlyTransfer}`,
+            `Alquiler Total:, $${totalMonthlyRent}`,
+            `Ganancia Final (Usuario):, $${totalUserProfit}`
         ].join("\n");
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -386,11 +409,23 @@ const Reports = () => {
                             {classBreakdown
                                 .filter(cls => cls.sessionsHeld > 0 || !cls.isPractice) // Mostrar si hubo actividad o si es un grupo regular
                                 .map(cls => (
-                                <tr key={cls.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                    <td style={{ padding: '15px' }}>
-                                        <div style={{ fontWeight: 600 }} spellCheck="false" autoCorrect="off" autoCapitalize="none">{cls.name}</div>
-                                        <div style={{ fontSize: '12px', opacity: 0.5 }}>{cls.day} {cls.time}</div>
-                                    </td>
+                                 <tr key={cls.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                     <td style={{ padding: '15px' }}>
+                                         <div style={{ fontWeight: 600 }} spellCheck="false" autoCorrect="off" autoCapitalize="none">{cls.name}</div>
+                                         <div style={{ fontSize: '12px', opacity: 0.5 }}>
+                                             {cls.isPractice && cls.date ? (() => {
+                                                 const dayOfWeekMap = {
+                                                     'Sunday': 'Domingo', 'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
+                                                     'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado'
+                                                 };
+                                                 const dObj = new Date(cls.date + 'T12:00:00');
+                                                 const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
+                                                 const dayName = dayOfWeekMap[dNameEn] || cls.day;
+                                                 const datePart = new Date(cls.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' });
+                                                 return `${dayName} ${datePart} ${cls.time || ''}`.trim();
+                                             })() : `${cls.day} ${cls.time}`}
+                                         </div>
+                                     </td>
                                     <td>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                                             <div style={{ fontSize: '12px' }}>{cls.totalAttendances} asistentes</div>
