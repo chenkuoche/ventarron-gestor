@@ -1,12 +1,26 @@
 const { onCall } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
-const { Resend } = require("resend");
-const { initializeApp } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
 
-initializeApp();
-const db = getFirestore();
+let dbInstance;
+function getDb() {
+    if (!dbInstance) {
+        const { initializeApp } = require('firebase-admin/app');
+        const { getFirestore } = require('firebase-admin/firestore');
+        initializeApp();
+        dbInstance = getFirestore();
+    }
+    return dbInstance;
+}
+
+let resendInstance;
+function getResend() {
+    if (!resendInstance) {
+        const { Resend } = require("resend");
+        resendInstance = new Resend(process.env.RESEND_API_KEY);
+    }
+    return resendInstance;
+}
 
 /**
  * Helper: Obtiene la lista de alumnos que deben mensualidad este mes
@@ -71,7 +85,7 @@ async function getStudentsToRemind(db, targetMonthPrefix) {
         if (unpaidAttendances.length === 0) return;
 
         // Verificar si ya pagó una mensualidad este mes
-        const hasPaidMonthly = studentRecords.some(r => monthlyPrices.has(Number(r.paymentAmount)));
+        const hasPaidMonthly = studentRecords.some(r => r.isMonthlyCovered === true || monthlyPrices.has(Number(r.paymentAmount)));
         
         let classDebt = 0;
         let practiceDebt = 0;
@@ -149,7 +163,7 @@ exports.sendEmail = onCall({
     if (!request.auth) throw new Error("unauthenticated", "Sin permisos.");
 
     const { to, subject, html } = request.data;
-    const resend = new Resend(process.env.RESEND_API_KEY);
+    const resend = getResend();
 
     try {
         const { data, error } = await resend.emails.send({
@@ -178,10 +192,10 @@ exports.sendMonthlyReminders = onSchedule({
     secrets: ["RESEND_API_KEY"],
     timeoutSeconds: 300 // 5 minutos de tiempo máximo
 }, async (event) => {
-    const resend = new Resend(process.env.RESEND_API_KEY);
+    const resend = getResend();
 
     try {
-        const pendingStudents = await getStudentsToRemind(db);
+        const pendingStudents = await getStudentsToRemind(getDb());
 
 
         logger.info(`Iniciando recordatorios para ${pendingStudents.length} pendientes de pago.`);
@@ -248,7 +262,7 @@ exports.triggerTestReminder = onCall({
     if (!request.auth) throw new Error("Sin permisos.");
 
     const { testEmail } = request.data;
-    const resend = new Resend(process.env.RESEND_API_KEY);
+    const resend = getResend();
 
     try {
         const { data, error } = await resend.emails.send({
@@ -290,7 +304,7 @@ exports.getPendingReminders = onCall({
     if (!request.auth) throw new Error("Sin permisos.");
     try {
         const monthPrefix = request.data?.monthPrefix;
-        const pending = await getStudentsToRemind(db, monthPrefix);
+        const pending = await getStudentsToRemind(getDb(), monthPrefix);
         return {
             success: true,
             students: pending.map(s => ({
@@ -319,11 +333,11 @@ exports.triggerManualReminders = onCall({
     region: "us-central1"
 }, async (request) => {
     if (!request.auth) throw new Error("Sin permisos.");
-    const resend = new Resend(process.env.RESEND_API_KEY);
+    const resend = getResend();
 
     try {
         const monthPrefix = request.data?.monthPrefix;
-        const pending = await getStudentsToRemind(db, monthPrefix);
+        const pending = await getStudentsToRemind(getDb(), monthPrefix);
         logger.info(`Disparo manual de recordatorios para ${pending.length} pendientes en el mes ${monthPrefix || 'actual'}.`);
 
         for (const student of pending) {
@@ -389,7 +403,7 @@ exports.sendMonthlyReport = onSchedule({
     const today = new Date();
     const targetDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
 
-    const resend = new Resend(process.env.RESEND_API_KEY);
+    const resend = getResend();
     const months = [
         'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
         'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
@@ -402,9 +416,9 @@ exports.sendMonthlyReport = onSchedule({
 
     try {
         // 2. Obtener datos necesarios
-        const studentsSnap = await db.collection('students').get();
-        const classesSnap = await db.collection('classes').get();
-        const recordsSnap = await db.collection('attendance_records')
+        const studentsSnap = await getDb().collection('students').get();
+        const classesSnap = await getDb().collection('classes').get();
+        const recordsSnap = await getDb().collection('attendance_records')
             .where('date', '>=', `${yearMonth}-01`)
             .where('date', '<=', `${yearMonth}-31`)
             .get();
@@ -433,7 +447,7 @@ exports.sendMonthlyReport = onSchedule({
             const amount = parseFloat(r.paymentAmount) || 0;
             if (amount <= 0) return;
 
-            const isMonthly = monthlyPriceLevels.has(amount);
+            const isMonthly = r.isMonthlyCovered || monthlyPriceLevels.has(amount);
             const student = students.find(s => s.id === r.studentId);
             const enrolled = student?.enrolledClasses || [];
 
@@ -608,7 +622,7 @@ exports.sendBirthdayNotifications = onSchedule({
 }, async (event) => {
     try {
         // 1. Verificar si las notificaciones están habilitadas
-        const settingsDoc = await db.collection('settings').doc('admin').get();
+        const settingsDoc = await getDb().collection('settings').doc('admin').get();
         if (!settingsDoc.exists || settingsDoc.data().birthdayEmailsEnabled !== true) {
             logger.info("Notificaciones de cumpleaños deshabilitadas o no configuradas. Saltando.");
             return;
@@ -619,7 +633,7 @@ exports.sendBirthdayNotifications = onSchedule({
         const currentDay = now.getDate(); // 1-31
 
         // 2. Obtener alumnos
-        const studentsSnap = await db.collection('students').get();
+        const studentsSnap = await getDb().collection('students').get();
         const students = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         // 3. Filtrar los que cumplen hoy
@@ -635,7 +649,7 @@ exports.sendBirthdayNotifications = onSchedule({
         }
 
         // 4. Enviar email al administrador
-        const resend = new Resend(process.env.RESEND_API_KEY);
+        const resend = getResend();
         
         let studentsListHtml = birthdayStudents.map(s => `<li style="margin-bottom: 10px;"><strong>${s.name}</strong>${s.phone ? `<br><a href="https://wa.me/${s.phone.replace(/\D/g, '')}" style="color: #2ecc71; font-size: 14px; text-decoration: none;">Enviar WhatsApp</a>` : ''}</li>`).join('');
 

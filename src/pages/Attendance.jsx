@@ -65,7 +65,8 @@ const Attendance = () => {
                         paymentAmount: record.paymentAmount || 0,
                         paymentMethod: record.paymentMethod || '',
                         receiptSent: record.receiptSent || false,
-                        waReceiptSent: record.waReceiptSent || false
+                        waReceiptSent: record.waReceiptSent || false,
+                        isMonthlyCovered: record.isMonthlyCovered || false
                     };
                     if (record.isGuest) existingExtra[s.id] = 'guest';
                     else if (record.isPL) existingExtra[s.id] = 'pl';
@@ -79,7 +80,8 @@ const Attendance = () => {
                         paymentAmount: 0,
                         paymentMethod: '',
                         receiptSent: false,
-                        waReceiptSent: false
+                        waReceiptSent: false,
+                        isMonthlyCovered: false
                     };
                 } else if ((s.guestClasses || []).includes(selectedClassId)) {
                     initial[s.id] = {
@@ -87,14 +89,15 @@ const Attendance = () => {
                         paymentAmount: 0,
                         paymentMethod: '',
                         receiptSent: false,
-                        waReceiptSent: false
+                        waReceiptSent: false,
+                        isMonthlyCovered: false
                     };
                     existingExtra[s.id] = 'guest';
                 }
             });
 
             if (existing.find(r => r.studentId === 'NO_CLASS')) {
-                initial['NO_CLASS'] = { present: false, paymentAmount: 0, paymentMethod: '', receiptSent: false, waReceiptSent: false };
+                initial['NO_CLASS'] = { present: false, paymentAmount: 0, paymentMethod: '', receiptSent: false, waReceiptSent: false, isMonthlyCovered: false };
             }
 
             const remoteHash = JSON.stringify(initial) + JSON.stringify(existingExtra);
@@ -610,16 +613,22 @@ const Attendance = () => {
     const monthPrefix = selectedDate.substring(0, 7);
     const monthlyPayments = records.filter(r =>
         r.date && r.date.startsWith(monthPrefix) &&
-        (Number(r.paymentAmount) > 0)
+        (Number(r.paymentAmount) > 0 || r.isMonthlyCovered === true)
     );
 
     const studentMonthlyStatus = {};
     students.forEach(s => {
-        const payment = monthlyPayments.filter(p => p.studentId === s.id && (Number(p.paymentAmount) === Number(selectedClass.monthlyPrice) || Number(p.paymentAmount) === Number(selectedClass.monthly2xsPrice))).sort((a,b) => b.date.localeCompare(a.date))[0];
+        const payment = monthlyPayments.filter(p => 
+            p.studentId === s.id && (
+                Number(p.paymentAmount) === Number(selectedClass.monthlyPrice) || 
+                Number(p.paymentAmount) === Number(selectedClass.monthly2xsPrice) ||
+                p.isMonthlyCovered === true
+            )
+        ).sort((a,b) => b.date.localeCompare(a.date))[0];
         if (payment) {
             studentMonthlyStatus[s.id] = {
                 date: payment.date,
-                plan: Number(payment.paymentAmount) === Number(selectedClass.monthlyPrice) ? '1xS' : '2xS',
+                plan: payment.isMonthlyCovered ? 'MC' : (Number(payment.paymentAmount) === Number(selectedClass.monthlyPrice) ? '1xS' : '2xS'),
                 paymentMethod: payment.paymentMethod,
                 receiptSent: payment.receiptSent
             };
@@ -824,7 +833,7 @@ const Attendance = () => {
                             </thead>
                             <tbody>
                                 {finalVisibleStudents.map(student => {
-                                    const rec = studentRecords[student.id] || { present: false, paymentAmount: 0, paymentMethod: '', receiptSent: false };
+                                    const rec = studentRecords[student.id] || { present: false, paymentAmount: 0, paymentMethod: '', receiptSent: false, isMonthlyCovered: false };
                                     const studentStatus = emailStatus[student.id];
                                     const type = extraData[student.id];
                                     const activePlan = studentMonthlyStatus[student.id];
@@ -833,6 +842,7 @@ const Attendance = () => {
                                     const isS = amountNum === Number(selectedClass.classPrice) && amountNum > 0;
                                     const is1xS = (amountNum === Number(selectedClass.monthlyPrice) && amountNum > 0) || (amountNum === 0 && activePlan?.plan === '1xS');
                                     const is2xS = (amountNum === Number(selectedClass.monthly2xsPrice) && amountNum > 0) || (amountNum === 0 && activePlan?.plan === '2xS');
+                                    const isMC = rec.isMonthlyCovered || (amountNum === 0 && activePlan?.plan === 'MC');
                                     
                                     const activePlanMethod = (amountNum === 0 && activePlan) ? activePlan.paymentMethod : rec.paymentMethod;
                                     const pColor = activePlanMethod === 'transfer' ? '#3498db' : '#2ecc71';
@@ -919,7 +929,7 @@ const Attendance = () => {
                                                          </div>
                                                      </div>
                                                      {!selectedClass.isPractice && (
-                                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '4px' }}>
+                                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
                                                              <button className="btn btn-secondary" style={{ padding: '6px 2px', fontSize: '9px', justifyContent: 'center', ...(isS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.classPrice)}>S: ${selectedClass.classPrice}</button>
                                                              <button className="btn btn-secondary" style={{ padding: '6px 2px', fontSize: '9px', justifyContent: 'center', ...(is1xS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.monthlyPrice)}>1xS</button>
                                                              <button className="btn btn-secondary" style={{ padding: '6px 2px', fontSize: '9px', justifyContent: 'center', ...(is2xS ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {}) }} onClick={() => handleValueChange(student.id, 'paymentAmount', selectedClass.monthly2xsPrice)}>2xS</button>
@@ -928,6 +938,15 @@ const Attendance = () => {
                                                                  handleValueChange(student.id, 'paymentMethod', 'transfer');
                                                                  setExtraData(prev => ({ ...prev, [student.id]: 'pl' }));
                                                              }}>PL: ${selectedClass.plPrice || 249}</button>
+                                                             <button className="btn btn-secondary" style={{ 
+                                                                  padding: '6px 2px', 
+                                                                  fontSize: '9px', 
+                                                                  justifyContent: 'center', 
+                                                                  fontWeight: 'bold',
+                                                                  ...(isMC ? { borderColor: pColor, color: pColor, backgroundColor: pBg } : {})
+                                                              }} onClick={() => {
+                                                                  handleValueChange(student.id, 'isMonthlyCovered', !rec.isMonthlyCovered);
+                                                              }} title="Mensualidad Cubierta (Cubre todo el mes)">MC</button>
                                                          </div>
                                                      )}
                                                      {amountNum === 0 && activePlan && (

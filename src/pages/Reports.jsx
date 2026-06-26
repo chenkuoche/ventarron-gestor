@@ -54,7 +54,7 @@ const Reports = () => {
         const amount = parseFloat(r.paymentAmount) || 0;
         if (amount <= 0) return;
 
-        const isMonthly = monthlyPriceLevels.has(amount);
+        const isMonthly = r.isMonthlyCovered || monthlyPriceLevels.has(amount);
         const student = students.find(s => s.id === r.studentId);
         const enrolled = student?.enrolledClasses || [];
 
@@ -256,7 +256,7 @@ const Reports = () => {
                 const amount = parseFloat(r.paymentAmount) || 0;
                 if (amount <= 0) return;
 
-                const isMonthly = monthlyPriceLevels.has(amount);
+                const isMonthly = r.isMonthlyCovered || monthlyPriceLevels.has(amount);
                 const enrolled = student?.enrolledClasses || [];
 
                 if (isMonthly && enrolled.length > 0) {
