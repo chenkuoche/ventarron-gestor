@@ -478,7 +478,7 @@ exports.sendMonthlyReport = onSchedule({
                 if (r.studentId === 'NO_CLASS') return true;
                 const dObj = new Date(r.date + 'T12:00:00');
                 const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
-                return dayOfWeekMap[dNameEn] === cls.day;
+                return cls.isPractice || dayOfWeekMap[dNameEn] === cls.day;
             });
 
             const incomeFromMap = classIncomeMap[cls.id] || { total: 0, cash: 0, transfer: 0 };
@@ -491,7 +491,9 @@ exports.sendMonthlyReport = onSchedule({
             const sessionDates = [...new Set(classRecords.filter(r => r.studentId !== 'NO_CLASS' && !datesWithNoClass.has(r.date)).map(r => r.date))].sort();
             const sessionsHeld = sessionDates.length;
 
-            const totalRent = sessionsHeld * (cls.rent || 0);
+            const totalRent = cls.isPractice 
+                ? (sessionsHeld > 0 ? (cls.rent || 0) : 0) // Para prácticas el alquiler es por evento único
+                : (sessionsHeld * (cls.rent || 0)); // Para clases regulares es por sesión
             const profitBeforeSplit = totalIncome - totalRent;
             const userProfit = profitBeforeSplit * (cls.profitSplit || 1);
 
@@ -510,23 +512,36 @@ exports.sendMonthlyReport = onSchedule({
             };
         });
 
+        // Filtrar clases/prácticas inactivas en este mes (Modificación 1)
+        const activeClassBreakdown = classBreakdown.filter(c => c.sessionsHeld > 0);
+
         // 4. Generar CSV de Balance General
         const balanceHeader = ["Clase", "Dia/Hora", "Sesiones", "Ingreso Total", "Efectivo", "Transferencia", "Alquiler", "Ganancia Total", "División", "Ganancia Final"];
-        const balanceRows = classBreakdown.map(c => [
-            c.name,
-            `${c.day} ${c.time}`,
-            c.sessionsHeld,
-            c.totalIncome,
-            c.cashIncome,
-            c.transferIncome,
-            c.totalRent,
-            c.profitBeforeSplit,
-            c.profitSplit === 1 ? "100%" : "50/50",
-            c.userProfit
-        ]);
+        const balanceRows = activeClassBreakdown.map(c => {
+            let dayTimeStr = `${c.day} ${c.time}`;
+            if (c.isPractice && c.date) {
+                const dObj = new Date(c.date + 'T12:00:00');
+                const dNameEn = dObj.toLocaleDateString('en-US', { weekday: 'long' });
+                const dayName = dayOfWeekMap[dNameEn] || c.day;
+                const datePart = new Date(c.date + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' });
+                dayTimeStr = `${dayName} ${datePart} ${c.time || ''}`.trim();
+            }
+            return [
+                c.name,
+                dayTimeStr,
+                c.sessionsHeld,
+                c.totalIncome,
+                c.cashIncome,
+                c.transferIncome,
+                c.totalRent,
+                c.profitBeforeSplit,
+                c.profitSplit === 1 ? "100%" : "50/50",
+                c.userProfit
+            ];
+        });
         const balanceCSV = [balanceHeader.join(","), ...balanceRows.map(row => row.join(","))].join("\n");
 
-        // 5. Generar un CSV por cada clase
+        // 5. Generar un CSV por cada clase activa (Modificación 1 y 2)
         const attachments = [
             {
                 filename: `Balance_Ventarron_${months[selectedMonth]}_${selectedYear}.csv`,
@@ -534,20 +549,20 @@ exports.sendMonthlyReport = onSchedule({
             }
         ];
 
-        classBreakdown.forEach(cls => {
+        activeClassBreakdown.forEach(cls => {
             const relevantStudentIds = [...new Set(cls.classRecords.filter(r => r.studentId !== 'NO_CLASS').map(r => r.studentId))];
             const relevantStudents = relevantStudentIds.map(id => students.find(s => s.id === id)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name, 'es'));
 
             const classDates = cls.sessionDates;
-            const headers = ["Alumno", ...classDates.map(d => new Date(d + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })), "Total Pagado"];
+            const headers = ["Alumno", ...classDates.map(d => new Date(d + 'T12:00:00').toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' })), "Pagado en este grupo", "TOTAL ASIGNADO"];
 
             const rows = relevantStudents.map(student => {
-                let studentTotal = 0;
+                let studentLocalTotal = 0;
                 const columns = classDates.map(date => {
                     const rec = cls.classRecords.find(r => r.studentId === student.id && r.date === date);
                     if (!rec) return "-";
                     const amount = parseFloat(rec.paymentAmount) || 0;
-                    studentTotal += amount;
+                    studentLocalTotal += amount;
                     let mark = "A";
                     if (rec.isGuest) mark = "INV";
                     else if (rec.isRecovery || !(student.enrolledClasses || []).includes(cls.id)) mark = "R";
@@ -555,14 +570,62 @@ exports.sendMonthlyReport = onSchedule({
                     if (amount > 0) cell += ` $${amount}`;
                     return cell.replace(/,/g, ''); // Limpiar comas para CSV
                 });
-                return [student.name, ...columns, `$${studentTotal}`];
+
+                // Calcular cuánto de las mensualidades del alumno corresponden a ESTA clase
+                const studentAllRecords = records.filter(r => r.studentId === student.id);
+                let totalAssignedToThisClass = 0;
+
+                studentAllRecords.forEach(r => {
+                    const amount = parseFloat(r.paymentAmount) || 0;
+                    if (amount <= 0) return;
+
+                    const isMonthly = r.isMonthlyCovered || monthlyPriceLevels.has(amount);
+                    const enrolled = student?.enrolledClasses || [];
+
+                    if (isMonthly && enrolled.length > 0) {
+                        if (enrolled.includes(cls.id)) {
+                            totalAssignedToThisClass += amount / enrolled.length;
+                        }
+                    } else if (r.classId === cls.id) {
+                        // Pago individual en esta clase
+                        totalAssignedToThisClass += amount;
+                    }
+                });
+
+                return [
+                    student.name,
+                    ...columns,
+                    `$${studentLocalTotal}`,
+                    `$${Math.round(totalAssignedToThisClass)}` + (studentLocalTotal !== totalAssignedToThisClass ? " (*)" : "")
+                ];
             });
 
+            // Cálculos de resumen financiero para esta clase (Modificación 2)
+            const totalIncomeLabel = `Total Ingresos Asignados (Prorrateo):,$${cls.totalIncome}`;
+            const totalRentLabel = `Alquiler (${cls.sessionsHeld} días):,$${cls.totalRent}`;
+            const profitToSplitLabel = `Ganancia a repartir:,$${cls.profitBeforeSplit}`;
+
+            let profitSplitRows = [];
+            if (cls.profitSplit === 1) {
+                profitSplitRows.push(`Ganancia Profesor (100%):,$${cls.userProfit}`);
+            } else {
+                const partnerProfit = cls.profitBeforeSplit * (1 - cls.profitSplit);
+                profitSplitRows.push(`Ganancia Profesor 1:,$${cls.userProfit}`);
+                profitSplitRows.push(`Ganancia Profesor 2:,$${partnerProfit}`);
+            }
+
             const clsCSV = [
-                [`Detalle de Asistencia - ${cls.name}`, `${months[selectedMonth]} ${selectedYear}`].join(","),
+                [`Detalle de Asistencia y Pagos - ${cls.name}`, `${months[selectedMonth]} ${selectedYear}`].join(","),
+                [`Ingreso Total (Redistribuido): $${cls.totalIncome}`, `(*) El monto asignado considera el reparto de pases libres y mensualidades entre grupos.`].join(","),
                 [],
                 headers.join(","),
-                ...rows.map(row => row.join(","))
+                ...rows.map(row => row.join(",")),
+                [], // Espacio
+                ["RESUMEN FINANCIERO"],
+                [totalIncomeLabel],
+                [totalRentLabel],
+                [profitToSplitLabel],
+                ...profitSplitRows.map(row => [row])
             ].join("\n");
 
             attachments.push({
@@ -572,8 +635,8 @@ exports.sendMonthlyReport = onSchedule({
         });
 
         // 6. Enviar Email
-        const totalIncomeText = classBreakdown.reduce((acc, c) => acc + c.totalIncome, 0).toLocaleString();
-        const totalProfitText = classBreakdown.reduce((acc, c) => acc + c.userProfit, 0).toLocaleString();
+        const totalIncomeText = activeClassBreakdown.reduce((acc, c) => acc + c.totalIncome, 0).toLocaleString();
+        const totalProfitText = activeClassBreakdown.reduce((acc, c) => acc + c.userProfit, 0).toLocaleString();
 
         const { data, error } = await resend.emails.send({
             from: "Ventarrón Gestión <info@escueladetangoventarron.com>",
@@ -591,7 +654,7 @@ exports.sendMonthlyReport = onSchedule({
                     <p>Se adjuntan los siguientes archivos:</p>
                     <ul>
                         <li>Balance General mensual</li>
-                        <li>Planilla detallada de cada una de las ${classes.length} clases</li>
+                        <li>Planilla detallada de cada una de las ${activeClassBreakdown.length} clases</li>
                     </ul>
                     <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;"/>
                     <p style="font-size: 11px; opacity: 0.5;">Enviado automáticamente por el gestor de asistencias de Ventarrón.</p>
