@@ -897,7 +897,7 @@ const Attendance = () => {
                                                                  transition: 'all 0.3s ease',
                                                                  borderRadius: '6px'
                                                              }}
-                                                             title="Enviar Recibo por Mail"
+                                                             title={!student.email ? "Sin email registrado (enviar por WhatsApp)" : "Enviar Recibo por Mail"}
                                                          >
                                                              {currentEmailStatus === 'sending' ? <Loader2 size={16} className="spin" /> : 
                                                              (currentEmailStatus === 'sent' || currentEmailStatus === 'done') ? <CheckCircle size={16} /> : 

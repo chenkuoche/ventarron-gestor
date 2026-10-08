@@ -214,11 +214,10 @@ const Students = () => {
                             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                         />
 
-                        <label>Email</label>
+                        <label>Email (Opcional)</label>
                         <input
                             type="email"
-                            required
-                            placeholder="ejemplo@email.com"
+                            placeholder="ejemplo@email.com (opcional)"
                             value={formData.email}
                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         />
@@ -345,7 +344,11 @@ const Students = () => {
                                         >
                                             <div className="no-underline" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                                 <span style={{ fontWeight: 600, fontSize: '16px', color: '#fff', textDecoration: 'none' }}>{student.name}</span>
-                                                {student.email && <span style={{ fontSize: '12px', opacity: 0.4, textDecoration: 'none' }}>{student.email}</span>}
+                                                {student.email ? (
+                                                    <span style={{ fontSize: '12px', opacity: 0.4, textDecoration: 'none' }}>{student.email}</span>
+                                                ) : (
+                                                    <span style={{ fontSize: '11px', opacity: 0.25, fontStyle: 'italic', textDecoration: 'none' }}>Sin email</span>
+                                                )}
                                             </div>
                                         </td>
                                         <td style={{ padding: '10px' }}>
