@@ -84,12 +84,16 @@ export const AppProvider = ({ children }) => {
 
 
   const addStudent = async (student) => {
-    await addDoc(collection(db, 'students'), {
+    const studentData = {
       ...student,
       enrolledClasses: student.enrolledClasses || [],
       guestClasses: student.guestClasses || [],
       createdAt: new Date().toISOString()
-    });
+    };
+    const docRef = await addDoc(collection(db, 'students'), studentData);
+    const newStudent = { id: docRef.id, ...studentData };
+    setStudents(prev => [...prev.filter(s => s.id !== docRef.id), newStudent].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' })));
+    return newStudent;
   };
 
   const updateStudent = async (id, updated) => {

@@ -25,12 +25,24 @@ import {
     DollarSign,
     Users,
     EyeOff,
-    Cake
+    Cake,
+    UserPlus
 } from 'lucide-react';
 
 const Attendance = () => {
-    const { students, classes, records, saveAttendanceAndPayment, updateStudent, hasUnsavedChanges, setHasUnsavedChanges, selectedClassId, setSelectedClassId, selectedDate, setSelectedDate, sendEmail, markReceiptSent, markWAReceiptSent, markWAReminderSent } = useAppContext();
+    const { students, classes, records, saveAttendanceAndPayment, addStudent, updateStudent, hasUnsavedChanges, setHasUnsavedChanges, selectedClassId, setSelectedClassId, selectedDate, setSelectedDate, sendEmail, markReceiptSent, markWAReceiptSent, markWAReminderSent } = useAppContext();
     const [confirmModal, setConfirmModal] = useState(null); // { title: string, message: string, onConfirm: () => void }
+    const [showNewStudentModal, setShowNewStudentModal] = useState(false);
+    const [newStudentForm, setNewStudentForm] = useState({
+        name: '',
+        phone: '',
+        email: '',
+        birthDay: '',
+        birthMonth: '',
+        actionType: 'enroll',
+        markPresent: true
+    });
+    const [isCreatingStudent, setIsCreatingStudent] = useState(false);
     const [studentRecords, setStudentRecords] = useState({});
     const [searchExtra, setSearchExtra] = useState('');
     const [extraData, setExtraData] = useState({}); // { studentId: 'recovery' | 'guest' }
@@ -447,6 +459,101 @@ const Attendance = () => {
         setSearchExtra('');
     };
 
+    const handleOpenNewStudentModal = (initialName = '') => {
+        const defaultAction = selectedClass?.isPractice ? 'guest_today' : 'enroll';
+        setNewStudentForm({
+            name: (initialName || '').trim(),
+            phone: '',
+            email: '',
+            birthDay: '',
+            birthMonth: '',
+            actionType: defaultAction,
+            markPresent: true
+        });
+        setShowNewStudentModal(true);
+    };
+
+    const handleCreateStudentSubmit = async (e) => {
+        e.preventDefault();
+        const trimmedName = newStudentForm.name.trim();
+        if (!trimmedName || isCreatingStudent) return;
+
+        setIsCreatingStudent(true);
+        try {
+            const isRegularClass = !selectedClass?.isPractice;
+            const action = newStudentForm.actionType;
+
+            const enrolledClasses = (isRegularClass && action === 'enroll') ? [selectedClassId] : [];
+            const guestClasses = (isRegularClass && action === 'guest_permanent') ? [selectedClassId] : [];
+
+            const studentPayload = {
+                name: trimmedName,
+                phone: newStudentForm.phone.trim(),
+                email: newStudentForm.email.trim(),
+                birthDay: newStudentForm.birthDay ? String(newStudentForm.birthDay) : '',
+                birthMonth: newStudentForm.birthMonth ? String(newStudentForm.birthMonth) : '',
+                enrolledClasses,
+                guestClasses
+            };
+
+            const createdStudent = await addStudent(studentPayload);
+            const sId = createdStudent.id;
+
+            const markPresent = newStudentForm.markPresent;
+            const plPrice = selectedClass?.plPrice || 249;
+
+            if (action !== 'only_register') {
+                setHasUnsavedChanges(true);
+
+                if (action === 'enroll') {
+                    setStudentRecords(prev => ({
+                        ...prev,
+                        [sId]: { present: markPresent, paymentAmount: 0, paymentMethod: '', receiptSent: false }
+                    }));
+                } else if (action === 'guest_permanent') {
+                    setStudentRecords(prev => ({
+                        ...prev,
+                        [sId]: { present: markPresent, paymentAmount: 0, paymentMethod: '', receiptSent: false }
+                    }));
+                    setExtraData(prev => ({ ...prev, [sId]: 'guest' }));
+                } else if (action === 'guest_today') {
+                    setStudentRecords(prev => ({
+                        ...prev,
+                        [sId]: { present: markPresent, paymentAmount: 0, paymentMethod: '', receiptSent: false }
+                    }));
+                    setExtraData(prev => ({ ...prev, [sId]: 'guest' }));
+                } else if (action === 'recovery') {
+                    setStudentRecords(prev => ({
+                        ...prev,
+                        [sId]: { present: markPresent, paymentAmount: 0, paymentMethod: '', receiptSent: false }
+                    }));
+                    setExtraData(prev => ({ ...prev, [sId]: 'recovery' }));
+                } else if (action === 'pl') {
+                    setStudentRecords(prev => ({
+                        ...prev,
+                        [sId]: {
+                            present: markPresent,
+                            paymentAmount: plPrice,
+                            paymentMethod: 'transfer',
+                            receiptSent: false
+                        }
+                    }));
+                    setExtraData(prev => ({ ...prev, [sId]: 'pl' }));
+                }
+            }
+
+            setSearchExtra('');
+            setShowNewStudentModal(false);
+            setFeedbackMsg(`¡${trimmedName} registrado y sumado! ✅`);
+            setTimeout(() => setFeedbackMsg(''), 4000);
+        } catch (error) {
+            console.error("Error al registrar alumno:", error);
+            alert("Ocurrió un error al registrar el alumno. Por favor verifica la conexión.");
+        } finally {
+            setIsCreatingStudent(false);
+        }
+    };
+
     const removeExtra = (id, skipConfirm = false) => {
         const student = students.find(s => s.id === id);
         const isEnrolled = (student?.enrolledClasses || []).includes(selectedClassId);
@@ -767,42 +874,68 @@ const Attendance = () => {
             ) : (
                 <>
                 <div className="card" style={{ marginBottom: '20px', padding: '15px' }}>
-                    <div className="flex gap-15 align-center" style={{ marginBottom: searchResults.length > 0 ? '15px' : 0 }}>
-                        <Search size={18} opacity={0.5} />
-                        <input 
-                            type="search" 
-                            placeholder="Buscar alumno para Recuperar o Invitado..." 
-                            value={searchExtra} 
-                            onChange={(e) => setSearchExtra(e.target.value)}
-                            style={{ background: 'none', border: 'none', color: 'white', flex: 1, marginBottom: 0 }}
-                        />
-                        {selectedClass.isPractice && (
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                                <button 
-                                    className="btn btn-secondary" 
-                                    onClick={() => setShowOnlyPending(!showOnlyPending)}
-                                    style={{ 
-                                        fontSize: '11px', padding: '8px 12px', 
-                                        border: '1px solid',
-                                        borderColor: showOnlyPending ? '#e74c3c' : 'rgba(255, 255, 255, 0.2)',
-                                        color: showOnlyPending ? 'white' : 'rgba(255, 255, 255, 0.6)', 
-                                        background: showOnlyPending ? '#e74c3c' : 'rgba(255, 255, 255, 0.05)',
-                                        fontWeight: showOnlyPending ? 'bold' : 'normal',
-                                        minWidth: '150px'
-                                    }}
-                                >
-                                    <EyeOff size={14} style={{ marginRight: '5px' }} /> 
-                                    {showOnlyPending ? 'FILTRO: PENDIENTES' : 'MOSTRAR SOLO PENDIENTES'}
-                                </button>
-                                <button 
-                                    className="btn btn-secondary" 
-                                    onClick={handlePreloadAll}
-                                    style={{ fontSize: '11px', padding: '8px 12px', border: '1px solid rgba(241, 196, 15, 0.3)', color: '#f1c40f', background: 'rgba(241, 196, 15, 0.05)' }}
-                                >
-                                    <Users size={14} style={{ marginRight: '5px' }} /> PRECARGAR LISTA
-                                </button>
-                            </div>
-                        )}
+                    <div className="flex gap-15 align-center" style={{ marginBottom: (searchResults.length > 0 || searchExtra.trim().length > 1) ? '15px' : 0, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '220px' }}>
+                            <Search size={18} opacity={0.5} />
+                            <input 
+                                type="search" 
+                                placeholder="Buscar alumno para Recuperar o Invitado..." 
+                                value={searchExtra} 
+                                onChange={(e) => setSearchExtra(e.target.value)}
+                                style={{ background: 'none', border: 'none', color: 'white', flex: 1, marginBottom: 0 }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <button 
+                                type="button"
+                                className="btn"
+                                onClick={() => handleOpenNewStudentModal(searchExtra)}
+                                style={{ 
+                                    fontSize: '11px', 
+                                    padding: '8px 14px', 
+                                    backgroundColor: '#3498db', 
+                                    color: 'white', 
+                                    border: 'none', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '6px', 
+                                    fontWeight: 'bold',
+                                    borderRadius: '6px',
+                                    whiteSpace: 'nowrap',
+                                    cursor: 'pointer'
+                                }}
+                                title="Registrar un nuevo alumno en el sistema y agregarlo a esta clase"
+                            >
+                                <UserPlus size={14} /> NUEVO ALUMNO
+                            </button>
+                            {selectedClass.isPractice && (
+                                <>
+                                    <button 
+                                        className="btn btn-secondary" 
+                                        onClick={() => setShowOnlyPending(!showOnlyPending)}
+                                        style={{ 
+                                            fontSize: '11px', padding: '8px 12px', 
+                                            border: '1px solid',
+                                            borderColor: showOnlyPending ? '#e74c3c' : 'rgba(255, 255, 255, 0.2)',
+                                            color: showOnlyPending ? 'white' : 'rgba(255, 255, 255, 0.6)', 
+                                            background: showOnlyPending ? '#e74c3c' : 'rgba(255, 255, 255, 0.05)',
+                                            fontWeight: showOnlyPending ? 'bold' : 'normal',
+                                            minWidth: '150px'
+                                        }}
+                                    >
+                                        <EyeOff size={14} style={{ marginRight: '5px' }} /> 
+                                        {showOnlyPending ? 'FILTRO: PENDIENTES' : 'MOSTRAR SOLO PENDIENTES'}
+                                    </button>
+                                    <button 
+                                        className="btn btn-secondary" 
+                                        onClick={handlePreloadAll}
+                                        style={{ fontSize: '11px', padding: '8px 12px', border: '1px solid rgba(241, 196, 15, 0.3)', color: '#f1c40f', background: 'rgba(241, 196, 15, 0.05)' }}
+                                    >
+                                        <Users size={14} style={{ marginRight: '5px' }} /> PRECARGAR LISTA
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     </div>
                     {searchResults.length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -817,6 +950,32 @@ const Attendance = () => {
                                     </div>
                                 </div>
                             ))}
+                            <div style={{ marginTop: '5px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: '12px', opacity: 0.6 }}>¿No es ninguno de ellos?</span>
+                                <button 
+                                    type="button"
+                                    className="btn btn-secondary" 
+                                    style={{ fontSize: '11px', padding: '4px 10px', color: '#3498db', borderColor: 'rgba(52, 152, 219, 0.4)' }}
+                                    onClick={() => handleOpenNewStudentModal(searchExtra)}
+                                >
+                                    <UserPlus size={12} style={{ marginRight: '4px' }} /> Registrar "{searchExtra}" como nuevo
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    {searchResults.length === 0 && searchExtra.trim().length > 1 && (
+                        <div className="flex justify-between align-center flex-wrap gap-10" style={{ padding: '12px 15px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                            <span style={{ fontSize: '13px', opacity: 0.7 }}>
+                                No se encontró ningún alumno registrado con <strong>"{searchExtra}"</strong>
+                            </span>
+                            <button 
+                                type="button"
+                                className="btn" 
+                                onClick={() => handleOpenNewStudentModal(searchExtra)}
+                                style={{ fontSize: '11px', padding: '6px 14px', backgroundColor: '#3498db', color: 'white', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', borderRadius: '6px', fontWeight: 'bold' }}
+                            >
+                                <UserPlus size={13} /> REGISTRAR "{searchExtra.trim()}" COMO NUEVO
+                            </button>
                         </div>
                     )}
                 </div>
@@ -1231,6 +1390,196 @@ const Attendance = () => {
                         </div>
                         
                         <button onClick={() => setViewHistory(null)} className="btn btn-secondary" style={{ width: '100%', marginTop: '30px', justifyContent: 'center' }}>CERRAR</button>
+                    </div>
+                </div>
+            )}
+            
+            {/* Modal de Registro de Nuevo Alumno desde Asistencia */}
+            {showNewStudentModal && (
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 3500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px', backdropFilter: 'blur(5px)' }}>
+                    <div className="card" style={{ maxWidth: '520px', width: '100%', maxHeight: '90vh', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 25px 60px rgba(0,0,0,0.6)', padding: '25px', borderRadius: '14px', animation: 'fadeIn 0.2s ease' }}>
+                        <div className="flex justify-between align-center" style={{ marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                            <div className="flex align-center gap-10">
+                                <div style={{ backgroundColor: 'rgba(52, 152, 219, 0.15)', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <UserPlus size={20} color="#3498db" />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Nuevo Alumno</h3>
+                                    <p style={{ margin: 0, fontSize: '11px', opacity: 0.6 }}>
+                                        Registrar en el sistema y sumar a {selectedClass?.name}
+                                    </p>
+                                </div>
+                            </div>
+                            <button 
+                                type="button" 
+                                onClick={() => setShowNewStudentModal(false)}
+                                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: '5px' }}
+                            >
+                                <XCircle size={20} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleCreateStudentSubmit}>
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={{ fontSize: '13px', marginBottom: '6px' }}>Nombre Completo *</label>
+                                <input 
+                                    type="text"
+                                    required
+                                    autoFocus
+                                    placeholder="Ej: Sofía Martínez"
+                                    value={newStudentForm.name}
+                                    onChange={(e) => setNewStudentForm(prev => ({ ...prev, name: e.target.value }))}
+                                    style={{ marginBottom: 0 }}
+                                />
+                            </div>
+
+                            <div className="mobile-form-row" style={{ marginBottom: '14px', display: 'flex', gap: '12px' }}>
+                                <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: '13px', marginBottom: '6px' }}>Teléfono (WhatsApp)</label>
+                                    <input 
+                                        type="tel"
+                                        placeholder="Ej: 099 123 456"
+                                        value={newStudentForm.phone}
+                                        onChange={(e) => setNewStudentForm(prev => ({ ...prev, phone: e.target.value }))}
+                                        style={{ marginBottom: 0 }}
+                                    />
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: '13px', marginBottom: '6px' }}>Email (Opcional)</label>
+                                    <input 
+                                        type="email"
+                                        placeholder="ejemplo@email.com"
+                                        value={newStudentForm.email}
+                                        onChange={(e) => setNewStudentForm(prev => ({ ...prev, email: e.target.value }))}
+                                        style={{ marginBottom: 0 }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div style={{ marginBottom: '16px' }}>
+                                <label style={{ fontSize: '13px', marginBottom: '6px' }}>Cumpleaños (Opcional)</label>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <select 
+                                        value={newStudentForm.birthDay} 
+                                        onChange={(e) => setNewStudentForm(prev => ({ ...prev, birthDay: e.target.value }))}
+                                        style={{ flex: 1, marginBottom: 0 }}
+                                    >
+                                        <option value="">Día</option>
+                                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                            <option key={day} value={day}>{day}</option>
+                                        ))}
+                                    </select>
+                                    <select 
+                                        value={newStudentForm.birthMonth} 
+                                        onChange={(e) => setNewStudentForm(prev => ({ ...prev, birthMonth: e.target.value }))}
+                                        style={{ flex: 1, marginBottom: 0 }}
+                                    >
+                                        <option value="">Mes</option>
+                                        {months.map((m, index) => (
+                                            <option key={index + 1} value={index + 1}>{m}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style={{ marginBottom: '18px' }}>
+                                <label style={{ fontSize: '13px', marginBottom: '8px' }}>Condición en esta clase:</label>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '8px' }}>
+                                    {(!selectedClass.isPractice ? [
+                                        { id: 'enroll', label: 'Anotar al Grupo Regular', badge: 'GRUPO', color: '#3498db', desc: 'Queda fijo en la lista del grupo todas las semanas' },
+                                        { id: 'guest_today', label: 'Invitado por Hoy', badge: 'INVITADO HOY', color: '#f1c40f', desc: 'Asiste solo a la sesión de hoy como invitado' },
+                                        { id: 'guest_permanent', label: 'Invitado Permanente', badge: 'INVITADO FIJO', color: '#e67e22', desc: 'Aparece fijo en la lista del grupo como Invitado' },
+                                        { id: 'recovery', label: 'Recupera Clase Hoy', badge: 'RECUPERA', color: '#e74c3c', desc: 'Asiste solo hoy recuperando una clase' },
+                                        { id: 'pl', label: 'Pase Libre (PL)', badge: 'PASE LIBRE', color: '#9b59b6', desc: `Asiste con Pase Libre ($${selectedClass.plPrice || 249})` },
+                                        { id: 'only_register', label: 'Solo Registrar', badge: 'SISTEMA', color: '#7f8c8d', desc: 'Crea el alumno sin sumarlo a la lista de hoy' }
+                                    ] : [
+                                        { id: 'guest_today', label: 'Anotar a la Práctica', badge: 'HOY', color: '#3498db', desc: 'Suma al alumno a la práctica de hoy' },
+                                        { id: 'pl', label: 'Pase Libre (PL)', badge: 'PASE LIBRE', color: '#9b59b6', desc: `Asiste con Pase Libre ($${selectedClass.plPrice || 249})` },
+                                        { id: 'only_register', label: 'Solo Registrar', badge: 'SISTEMA', color: '#7f8c8d', desc: 'Crea el alumno sin sumarlo a la lista de hoy' }
+                                    ]).map(act => {
+                                        const isSelected = newStudentForm.actionType === act.id;
+                                        return (
+                                            <div 
+                                                key={act.id}
+                                                onClick={() => setNewStudentForm(prev => ({ ...prev, actionType: act.id }))}
+                                                style={{
+                                                    padding: '10px 12px',
+                                                    borderRadius: '8px',
+                                                    cursor: 'pointer',
+                                                    border: `1.5px solid ${isSelected ? act.color : 'rgba(255,255,255,0.08)'}`,
+                                                    backgroundColor: isSelected ? `${act.color}20` : 'rgba(255,255,255,0.03)',
+                                                    transition: 'all 0.15s ease'
+                                                }}
+                                            >
+                                                <div className="flex justify-between align-center" style={{ marginBottom: '4px' }}>
+                                                    <span style={{ fontSize: '13px', fontWeight: isSelected ? 'bold' : '500', color: isSelected ? 'white' : 'rgba(255,255,255,0.85)' }}>
+                                                        {act.label}
+                                                    </span>
+                                                    <span style={{ fontSize: '9px', padding: '2px 5px', borderRadius: '3px', backgroundColor: `${act.color}35`, color: act.color, fontWeight: 'bold' }}>
+                                                        {act.badge}
+                                                    </span>
+                                                </div>
+                                                <p style={{ margin: 0, fontSize: '11px', opacity: 0.6, lineHeight: 1.3 }}>
+                                                    {act.desc}
+                                                </p>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {newStudentForm.actionType !== 'only_register' && (
+                                <label 
+                                    className="flex align-center gap-10" 
+                                    style={{ 
+                                        cursor: 'pointer', 
+                                        marginBottom: '20px', 
+                                        padding: '10px 12px', 
+                                        background: 'rgba(255,255,255,0.03)', 
+                                        borderRadius: '8px', 
+                                        border: '1px solid rgba(255,255,255,0.06)' 
+                                    }}
+                                >
+                                    <input 
+                                        type="checkbox" 
+                                        checked={newStudentForm.markPresent}
+                                        onChange={(e) => setNewStudentForm(prev => ({ ...prev, markPresent: e.target.checked }))}
+                                        style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer', accentColor: '#2ecc71' }}
+                                    />
+                                    <span style={{ fontSize: '13px', color: 'white' }}>
+                                        Marcar presente en la asistencia de hoy
+                                    </span>
+                                </label>
+                            )}
+
+                            <div className="flex gap-10" style={{ marginTop: '20px' }}>
+                                <button 
+                                    type="button" 
+                                    className="btn btn-secondary" 
+                                    onClick={() => setShowNewStudentModal(false)}
+                                    style={{ flex: 1, justifyContent: 'center' }}
+                                    disabled={isCreatingStudent}
+                                >
+                                    Cancelar
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    className="btn btn-primary" 
+                                    disabled={isCreatingStudent || !newStudentForm.name.trim()}
+                                    style={{ flex: 1.5, justifyContent: 'center', backgroundColor: '#3498db' }}
+                                >
+                                    {isCreatingStudent ? (
+                                        <>
+                                            <Loader2 size={16} className="spin" /> Guardando...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <UserPlus size={16} /> Registrar Alumno
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
