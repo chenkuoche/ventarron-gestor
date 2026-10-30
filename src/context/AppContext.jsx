@@ -218,6 +218,12 @@ export const AppProvider = ({ children }) => {
         await updateDoc(studentRef, { 
           waReminderSentAt: new Date().toISOString()
         });
+      },
+      markEmailReminderSent: async (studentId) => {
+        const studentRef = doc(db, 'students', studentId);
+        await setDoc(studentRef, { 
+          emailReminderSentAt: new Date().toISOString()
+        }, { merge: true });
       }
     }}>
       {children}

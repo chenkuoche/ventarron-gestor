@@ -14,6 +14,7 @@ import {
     Mail,
     Loader2,
     CheckCircle,
+    CheckCircle2,
     CalendarOff,
     XCircle,
     History,
@@ -30,7 +31,9 @@ import {
 } from 'lucide-react';
 
 const Attendance = () => {
-    const { students, classes, records, saveAttendanceAndPayment, addStudent, updateStudent, hasUnsavedChanges, setHasUnsavedChanges, selectedClassId, setSelectedClassId, selectedDate, setSelectedDate, sendEmail, markReceiptSent, markWAReceiptSent, markWAReminderSent } = useAppContext();
+    const { students, classes, records, saveAttendanceAndPayment, addStudent, updateStudent, hasUnsavedChanges, setHasUnsavedChanges, selectedClassId, setSelectedClassId, selectedDate, setSelectedDate, sendEmail, markReceiptSent, markWAReceiptSent, markWAReminderSent, markEmailReminderSent } = useAppContext();
+    const [sendingEmailStudentId, setSendingEmailStudentId] = useState(null);
+    const [sentEmailStudents, setSentEmailStudents] = useState(new Set());
     const [confirmModal, setConfirmModal] = useState(null); // { title: string, message: string, onConfirm: () => void }
     const [showNewStudentModal, setShowNewStudentModal] = useState(false);
     const [newStudentForm, setNewStudentForm] = useState({
@@ -307,6 +310,63 @@ const Attendance = () => {
                 }
             }));
             setHasUnsavedChanges(true);
+        }
+    };
+
+    const handleSendEmailReminder = async (student) => {
+        if (!student.email) {
+            alert("Este alumno no tiene correo electrónico registrado.");
+            return;
+        }
+
+        const currentMonthName = months[new Date().getMonth()];
+        const selClass = classes.find(c => (student.enrolledClasses || []).includes(c.id));
+        const price = selClass ? ((student.enrolledClasses || []).length > 1 ? selClass.monthly2xsPrice : selClass.monthlyPrice) : "---";
+
+        if (!window.confirm(`¿Enviar recordatorio de pago por email a ${student.name} (${student.email})?`)) return;
+
+        setSendingEmailStudentId(student.id);
+        try {
+            const html = `
+                <div style="font-family: sans-serif; color: #2c3e50; line-height: 1.6; max-width: 500px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 10px;">
+                    <div style="text-align: center; margin-bottom: 25px;">
+                        <img src="https://asistencias-ventarron.web.app/logo_escuela_final.png" alt="Ventarrón" style="max-width: 250px; height: auto;" />
+                    </div>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;"/>
+                    <p>Hola <strong>${student.name}</strong>,</p>
+                    <p>Te enviamos este mensajito para recordarte que el saldo del mes de <strong>${currentMonthName}</strong> para la clase de <strong>${selClass?.name || 'tango'}</strong> quedó pendiente${price !== '---' ? ` (<strong>$${price}</strong>)` : ''}.</p>
+                    <p>Si ya transferiste, por favor responde a este correo adjuntando el comprobante.</p>
+                    <p>Muchas gracias por elegirnos y por compartir el baile con nosotros.</p>
+                    <br/>
+                    <p style="text-align: center; font-style: italic;">¡Nos vemos en pista! 💃✨</p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;"/>
+                    <p style="font-size: 10px; opacity: 0.4; text-align: center;">Este es un recordatorio automático del sistema de administración de Ventarrón.</p>
+                </div>
+            `;
+
+            const res = await sendEmail({
+                to: student.email,
+                subject: `Recordatorio de Pago - Ventarrón`,
+                html: html
+            });
+
+            if (res?.data?.success) {
+                if (markEmailReminderSent) {
+                    await markEmailReminderSent(student.id);
+                }
+                setSentEmailStudents(prev => new Set(prev).add(student.id));
+                if (viewHistory && viewHistory.id === student.id) {
+                    setViewHistory(prev => ({ ...prev, emailReminderSentAt: new Date().toISOString() }));
+                }
+                alert(`¡Recordatorio enviado con éxito a ${student.name}!`);
+            } else {
+                alert("Error al enviar el email: " + (res?.data?.message || res?.data?.error?.message || "Error desconocido"));
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error al enviar el recordatorio.");
+        } finally {
+            setSendingEmailStudentId(null);
         }
     };
 
@@ -1247,7 +1307,7 @@ const Attendance = () => {
                                     )}
                                 </div>
                                 
-                                <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                                <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                     {(() => {
                                         const currentPrefix = new Date().toISOString().substring(0, 7);
                                         const isRemSent = viewHistory.waReminderSentAt && viewHistory.waReminderSentAt.startsWith(currentPrefix);
@@ -1256,8 +1316,42 @@ const Attendance = () => {
                                                 onClick={() => handleSendWA(viewHistory, 'debt')}
                                                 className="btn" 
                                                 style={{ fontSize: '10px', padding: '6px 12px', backgroundColor: isRemSent ? '#2ecc71' : '#e74c3c', border: 'none', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold' }}
+                                                title="Enviar recordatorio por WhatsApp"
                                             >
-                                                <MessageCircle size={12} /> {isRemSent ? 'RECORDATORIO ENVIADO' : 'ENVIAR RECORDATORIO (WA)'}
+                                                {isRemSent ? <CheckCircle2 size={12} /> : <MessageCircle size={12} />} {isRemSent ? 'RECORDATORIO WA ENVIADO' : 'ENVIAR RECORDATORIO (WA)'}
+                                            </button>
+                                        );
+                                    })()}
+                                    {(() => {
+                                        const currentPrefix = new Date().toISOString().substring(0, 7);
+                                        const isEmailSent = (viewHistory.emailReminderSentAt && viewHistory.emailReminderSentAt.startsWith(currentPrefix)) || sentEmailStudents.has(viewHistory.id);
+                                        return (
+                                            <button 
+                                                onClick={() => handleSendEmailReminder(viewHistory)}
+                                                disabled={sendingEmailStudentId === viewHistory.id || !viewHistory.email}
+                                                className="btn" 
+                                                style={{ 
+                                                    fontSize: '10px', 
+                                                    padding: '6px 12px', 
+                                                    backgroundColor: isEmailSent ? '#2ecc71' : '#3498db', 
+                                                    border: 'none', 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    gap: '5px', 
+                                                    fontWeight: 'bold',
+                                                    opacity: !viewHistory.email ? 0.5 : 1,
+                                                    cursor: !viewHistory.email ? 'not-allowed' : 'pointer'
+                                                }}
+                                                title={!viewHistory.email ? "El alumno no tiene email registrado" : "Enviar recordatorio por Email"}
+                                            >
+                                                {sendingEmailStudentId === viewHistory.id ? (
+                                                    <Loader2 size={12} className="spin" />
+                                                ) : isEmailSent ? (
+                                                    <CheckCircle2 size={12} />
+                                                ) : (
+                                                    <Mail size={12} />
+                                                )}
+                                                {isEmailSent ? 'RECORDATORIO MAIL ENVIADO' : 'ENVIAR RECORDATORIO (MAIL)'}
                                             </button>
                                         );
                                     })()}

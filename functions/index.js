@@ -337,7 +337,11 @@ exports.triggerManualReminders = onCall({
 
     try {
         const monthPrefix = request.data?.monthPrefix;
-        const pending = await getStudentsToRemind(getDb(), monthPrefix);
+        const studentId = request.data?.studentId;
+        let pending = await getStudentsToRemind(getDb(), monthPrefix);
+        if (studentId) {
+            pending = pending.filter(s => s.id === studentId);
+        }
         logger.info(`Disparo manual de recordatorios para ${pending.length} pendientes en el mes ${monthPrefix || 'actual'}.`);
 
         for (const student of pending) {

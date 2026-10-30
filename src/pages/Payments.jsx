@@ -16,7 +16,16 @@ import {
 } from 'lucide-react';
 
 const Payments = () => {
-    const { records, students, classes, getPendingReminders, triggerManualReminders, markWAReminderSent } = useAppContext();
+    const { 
+        records, 
+        students, 
+        classes, 
+        getPendingReminders, 
+        triggerManualReminders, 
+        sendEmail, 
+        markWAReminderSent, 
+        markEmailReminderSent 
+    } = useAppContext();
     const [monthFilter, setMonthFilter] = useState(''); // Empty means last 2 months
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -26,6 +35,8 @@ const Payments = () => {
     const [pendingReminders, setPendingReminders] = useState(null);
     const [isLoadingPending, setIsLoadingPending] = useState(false);
     const [isSending, setIsSending] = useState(false);
+    const [sendingEmailId, setSendingEmailId] = useState(null);
+    const [sentEmailIds, setSentEmailIds] = useState(new Set());
     const [expandedDebtor, setExpandedDebtor] = useState(null);
     const [debtTypeFilter, setDebtTypeFilter] = useState('all'); // 'all', 'classes', 'practices'
 
@@ -84,6 +95,81 @@ const Payments = () => {
             } finally {
                 setIsSending(false);
             }
+        }
+    };
+
+    const handleSendSingleEmailReminder = async (debtor) => {
+        const fullStudent = students.find(st => st.id === debtor.id);
+        const targetEmail = debtor.email || fullStudent?.email;
+        if (!targetEmail) {
+            alert("Este alumno no tiene correo electrónico registrado.");
+            return;
+        }
+
+        const monthName = months[reminderMonth];
+        const confirmMsg = `¿Enviar recordatorio de pago por email a ${debtor.name} (${targetEmail}) por un saldo de $${debtor.totalOwed} (${monthName} ${reminderYear})?`;
+        if (!window.confirm(confirmMsg)) return;
+
+        setSendingEmailId(debtor.id);
+        try {
+            const datesFormatted = (debtor.attendanceDates || []).map(d => {
+                const dObj = new Date(d + 'T12:00:00');
+                return dObj.toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit' });
+            }).join(', ');
+
+            let debtMessage = "";
+            if (debtor.isFullMonthly) {
+                debtMessage = `recordarte que el pago de la mensualidad de ${monthName} se debe efectuar antes del <strong>día 10 de cada mes</strong>. El monto pendiente es de <strong>$${debtor.totalOwed}</strong>.`;
+            } else if (datesFormatted) {
+                const classWord = (debtor.attendanceDates || []).length > 1 ? 'las clases' : 'la clase';
+                const dateWord = (debtor.attendanceDates || []).length > 1 ? 'de los días' : 'del día';
+                debtMessage = `recordarte que tienes pendiente el pago de <strong>$${debtor.totalOwed}</strong> por ${classWord} ${dateWord} <strong>${datesFormatted}</strong> (${monthName}).`;
+            } else {
+                debtMessage = `recordarte que el saldo del mes de <strong>${monthName}</strong> quedó pendiente (<strong>$${debtor.totalOwed}</strong>).`;
+            }
+
+            const breakdown = (debtor.classDebt > 0 && debtor.practiceDebt > 0)
+                ? `<p style="font-size: 13px; color: #7f8c8d; margin-top: 5px;">(Desglose: Clases: $${debtor.classDebt} | Prácticas: $${debtor.practiceDebt})</p>`
+                : '';
+
+            const html = `
+                <div style="font-family: sans-serif; color: #2c3e50; line-height: 1.6; max-width: 500px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 10px;">
+                    <div style="text-align: center; margin-bottom: 25px;">
+                        <img src="https://asistencias-ventarron.web.app/logo_escuela_final.png" alt="Ventarrón" style="max-width: 250px; height: auto;" />
+                    </div>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;"/>
+                    <p>Hola <strong>${debtor.name}</strong>,</p>
+                    <p>Te enviamos este mensajito para ${debtMessage}</p>
+                    ${breakdown}
+                    <p>Si ya transferiste, por favor responde a este correo enviándonos el comprobante.</p>
+                    <p>Muchas gracias por elegirnos y por compartir el baile con nosotros.</p>
+                    <br/>
+                    <p style="text-align: center; font-style: italic;">¡Nos vemos en pista! 💃✨</p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;"/>
+                    <p style="font-size: 10px; opacity: 0.4; text-align: center;">Este es un recordatorio automático del sistema de administración de Ventarrón.</p>
+                </div>
+            `;
+
+            const res = await sendEmail({
+                to: targetEmail,
+                subject: `Recordatorio de Pago - Ventarrón`,
+                html: html
+            });
+
+            if (res?.data?.success) {
+                if (markEmailReminderSent) {
+                    await markEmailReminderSent(debtor.id);
+                }
+                setSentEmailIds(prev => new Set(prev).add(debtor.id));
+                alert(`¡Recordatorio enviado con éxito a ${debtor.name} (${targetEmail})!`);
+            } else {
+                alert("Error al enviar el correo: " + (res?.data?.message || res?.data?.error?.message || "Error desconocido"));
+            }
+        } catch (e) {
+            console.error("Error enviando email individual:", e);
+            alert("Ocurrió un error al intentar enviar el recordatorio.");
+        } finally {
+            setSendingEmailId(null);
         }
     };
 
@@ -300,6 +386,12 @@ const Payments = () => {
                                         })
                                         .map(s => {
                                             const fullStudent = students.find(st => st.id === s.id);
+                                            const targetEmail = s.email || fullStudent?.email;
+                                            const mStr = (reminderMonth + 1).toString().padStart(2, '0');
+                                            const targetYearMonth = `${reminderYear}-${mStr}`;
+                                            const isEmailSent = sentEmailIds.has(s.id) || Boolean(fullStudent?.emailReminderSentAt && fullStudent.emailReminderSentAt.startsWith(targetYearMonth));
+                                            const isWASent = Boolean(fullStudent?.waReminderSentAt && fullStudent.waReminderSentAt.startsWith(targetYearMonth));
+
                                             return (
                                                 <div 
                                                     key={s.id} 
@@ -313,13 +405,50 @@ const Payments = () => {
                                                 >
                                                     <div className="flex justify-between align-center">
                                                         <span style={{ fontWeight: '600', color: expandedDebtor === s.id ? '#3498db' : 'inherit' }} spellCheck="false" autoCorrect="off" autoCapitalize="none">{s.name}</span>
-                                                        <span style={{ fontSize: '11px', opacity: 0.5 }}>{s.email}</span>
+                                                        <span style={{ fontSize: '11px', opacity: 0.5 }}>{targetEmail}</span>
                                                     </div>
                                                     <div className="flex justify-between align-center" style={{ marginTop: '5px' }}>
                                                         <span style={{ fontSize: '14px', fontWeight: '800', color: '#e74c3c' }}>${s.totalOwed}</span>
                                                         <div className="flex gap-5 align-center">
                                                             {s.classDebt > 0 && <span style={{ fontSize: '9px', backgroundColor: 'rgba(52, 152, 219, 0.1)', color: '#3498db', padding: '2px 6px', borderRadius: '4px', fontWeight: '700', border: '1px solid rgba(52, 152, 219, 0.2)' }}>CLASES: ${s.classDebt}</span>}
                                                             {s.practiceDebt > 0 && <span style={{ fontSize: '9px', backgroundColor: 'rgba(241, 196, 15, 0.1)', color: '#f1c40f', padding: '2px 6px', borderRadius: '4px', fontWeight: '700', border: '1px solid rgba(241, 196, 15, 0.2)' }}>PRÁCTICAS: ${s.practiceDebt}</span>}
+                                                            {targetEmail && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleSendSingleEmailReminder(s);
+                                                                    }}
+                                                                    disabled={sendingEmailId === s.id}
+                                                                    style={{
+                                                                        fontSize: '9px',
+                                                                        backgroundColor: isEmailSent ? 'rgba(52, 152, 219, 0.25)' : 'rgba(52, 152, 219, 0.15)',
+                                                                        color: '#3498db',
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: '4px',
+                                                                        fontWeight: '700',
+                                                                        border: `1px solid ${isEmailSent ? 'rgba(52, 152, 219, 0.5)' : 'rgba(52, 152, 219, 0.3)'}`,
+                                                                        cursor: sendingEmailId === s.id ? 'wait' : 'pointer',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '3px',
+                                                                        fontFamily: 'inherit',
+                                                                        lineHeight: 1
+                                                                    }}
+                                                                    title={isEmailSent 
+                                                                        ? `Recordatorio enviado por email (${fullStudent?.emailReminderSentAt ? new Date(fullStudent.emailReminderSentAt).toLocaleDateString('es-UY') : 'este mes'}). Clic para reenviar` 
+                                                                        : `Enviar recordatorio por Email a ${targetEmail}`}
+                                                                >
+                                                                    {sendingEmailId === s.id ? (
+                                                                        <Loader2 size={10} className="spin" />
+                                                                    ) : isEmailSent ? (
+                                                                        <CheckCircle2 size={10} />
+                                                                    ) : (
+                                                                        <Mail size={10} />
+                                                                    )}
+                                                                    MAIL
+                                                                </button>
+                                                            )}
                                                             {fullStudent?.phone && (
                                                                 <a
                                                                     href={`https://wa.me/${fullStudent.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola ${s.name}!\n\n¿Cómo estás? Te escribimos de Ventarrón para recordarte que el saldo del mes de ${months[reminderMonth]} quedó pendiente ($${s.totalOwed}).\n\nSi ya transferiste, por favor envíanos el comprobante.\n\n¡Muchas gracias y nos vemos en pista!`)}`}
@@ -331,20 +460,22 @@ const Payments = () => {
                                                                     }}
                                                                     style={{
                                                                         fontSize: '9px',
-                                                                        backgroundColor: 'rgba(46, 204, 113, 0.15)',
+                                                                        backgroundColor: isWASent ? 'rgba(46, 204, 113, 0.25)' : 'rgba(46, 204, 113, 0.15)',
                                                                         color: '#2ecc71',
                                                                         padding: '2px 6px',
                                                                         borderRadius: '4px',
                                                                         fontWeight: '700',
-                                                                        border: '1px solid rgba(46, 204, 113, 0.3)',
+                                                                        border: `1px solid ${isWASent ? 'rgba(46, 204, 113, 0.5)' : 'rgba(46, 204, 113, 0.3)'}`,
                                                                         textDecoration: 'none',
                                                                         display: 'flex',
                                                                         alignItems: 'center',
-                                                                        gap: '3px'
+                                                                        gap: '3px',
+                                                                        fontFamily: 'inherit',
+                                                                        lineHeight: 1
                                                                     }}
-                                                                    title="Enviar recordatorio por WhatsApp"
+                                                                    title={isWASent ? `Recordatorio enviado por WhatsApp (${new Date(fullStudent.waReminderSentAt).toLocaleDateString('es-UY')})` : "Enviar recordatorio por WhatsApp"}
                                                                 >
-                                                                    <MessageCircle size={10} /> WA
+                                                                    {isWASent ? <CheckCircle2 size={10} /> : <MessageCircle size={10} />} WA
                                                                 </a>
                                                             )}
                                                         </div>
