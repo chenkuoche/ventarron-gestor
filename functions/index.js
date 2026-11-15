@@ -1,4 +1,4 @@
-const { onCall } = require("firebase-functions/v2/https");
+const { onCall, onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 
@@ -751,3 +751,310 @@ exports.sendBirthdayNotifications = onSchedule({
         logger.error("Error crítico en sendBirthdayNotifications:", error);
     }
 });
+
+// Utilidad simple para escapar caracteres HTML y prevenir XSS
+function escapeHtml(text) {
+    if (!text) return "";
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+/**
+ * Valida opcionalmente el token de reCAPTCHA v3 si RECAPTCHA_SECRET_KEY está configurada
+ */
+async function verifyRecaptcha(token, remoteIp) {
+    const secretKey = process.env.RECAPTCHA_SECRET_KEY;
+    if (!secretKey) {
+        return { success: true, score: 1.0 };
+    }
+
+    if (!token) {
+        return { success: false, error: "Token de reCAPTCHA no proporcionado." };
+    }
+
+    try {
+        const params = new URLSearchParams();
+        params.append("secret", secretKey);
+        params.append("response", token);
+        if (remoteIp) {
+            params.append("remoteip", remoteIp);
+        }
+
+        const response = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: params.toString()
+        });
+
+        const data = await response.json();
+        return data;
+    } catch (err) {
+        logger.error("Error al contactar con la API de reCAPTCHA:", err);
+        return { success: true, score: 0.9, error: err.message };
+    }
+}
+
+/**
+ * Función HTTP Cloud Functions v2 para procesar consultas del formulario de la web pública (ES / EN)
+ */
+exports.contactForm = onRequest(
+    {
+        cors: true,
+        region: "us-central1",
+        secrets: ["RESEND_API_KEY"]
+    },
+    async (req, res) => {
+        if (req.method !== "POST") {
+            return res.status(405).json({
+                success: false,
+                error: "Método no permitido. Utiliza POST."
+            });
+        }
+
+        try {
+            const { name, email, message, lang, recaptchaToken } = req.body || {};
+            const isEn = lang === "en";
+
+            // 1. Verificación opcional de reCAPTCHA v3
+            const clientIp = req.ip || req.headers["x-forwarded-for"] || "";
+            const recaptchaResult = await verifyRecaptcha(recaptchaToken, clientIp);
+            if (!recaptchaResult.success || (typeof recaptchaResult.score === "number" && recaptchaResult.score < 0.5)) {
+                logger.warn("Envío bloqueado por reCAPTCHA v3:", recaptchaResult);
+                return res.status(403).json({
+                    success: false,
+                    error: isEn
+                        ? "Security verification failed. Please try again or contact us via WhatsApp."
+                        : "No se pudo verificar la seguridad del envío. Por favor, intenta nuevamente o escríbenos por WhatsApp."
+                });
+            }
+
+            // 2. Validaciones básicas
+            const trimmedName = typeof name === "string" ? name.trim() : "";
+            const trimmedEmail = typeof email === "string" ? email.trim() : "";
+            const trimmedMessage = typeof message === "string" ? message.trim() : "";
+
+            if (!trimmedName || !trimmedEmail || !trimmedMessage) {
+                return res.status(400).json({
+                    success: false,
+                    error: isEn
+                        ? "Name, Email and Message are required."
+                        : "Los campos Nombre, Email y Mensaje son obligatorios."
+                });
+            }
+
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(trimmedEmail)) {
+                return res.status(400).json({
+                    success: false,
+                    error: isEn
+                        ? "Please enter a valid email address."
+                        : "La dirección de correo electrónico no es válida."
+                });
+            }
+
+            if (trimmedName.length > 120 || trimmedMessage.length > 4000) {
+                return res.status(400).json({
+                    success: false,
+                    error: isEn
+                        ? "Name or message exceeds the maximum allowed length."
+                        : "El nombre o mensaje excede la longitud permitida."
+                });
+            }
+
+            const resend = getResend();
+            const SENDER_ES = "Escuela de Tango Ventarrón <info@escueladetangoventarron.com>";
+            const SENDER_EN = "Ventarrón Tango School <info@escueladetangoventarron.com>";
+            const SCHOOL_RECIPIENT = "escueladetangoventarron@gmail.com";
+
+            // 3. Plantilla HTML de notificación para la escuela
+            const schoolHtml = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; background-color: #f8fafc; margin: 0; padding: 24px; }
+                        .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+                        .header { background: linear-gradient(135deg, #1a1a1a 0%, #2c3e50 100%); color: #ffffff; padding: 24px 28px; border-bottom: 3px solid #e74c3c; }
+                        .header h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+                        .header p { margin: 6px 0 0 0; opacity: 0.85; font-size: 13px; }
+                        .content { padding: 28px; }
+                        .field-box { margin-bottom: 18px; background: #f8fafc; border-radius: 8px; padding: 14px 18px; border-left: 4px solid #e74c3c; }
+                        .field-label { font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 4px; }
+                        .field-value { font-size: 15px; color: #0f172a; font-weight: 500; }
+                        .message-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-top: 20px; }
+                        .message-label { font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 8px; }
+                        .message-content { font-size: 15px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; }
+                        .footer { background: #f1f5f9; padding: 16px 28px; text-align: center; font-size: 12px; color: #64748b; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="header">
+                            <h1>Nueva Consulta Web - Ventarrón</h1>
+                            <p>Recibida desde escueladetangoventarron.com (${isEn ? "Versión Inglés" : "Versión Español"})</p>
+                        </div>
+                        <div class="content">
+                            <div class="field-box">
+                                <div class="field-label">Nombre</div>
+                                <div class="field-value">${escapeHtml(trimmedName)}</div>
+                            </div>
+                            <div class="field-box">
+                                <div class="field-label">Correo Electrónico</div>
+                                <div class="field-value"><a href="mailto:${escapeHtml(trimmedEmail)}" style="color:#e74c3c; text-decoration:none;">${escapeHtml(trimmedEmail)}</a></div>
+                            </div>
+                            <div class="message-box">
+                                <div class="message-label">Mensaje:</div>
+                                <div class="message-content">${escapeHtml(trimmedMessage)}</div>
+                            </div>
+                        </div>
+                        <div class="footer">
+                            Puedes responder directamente a este correo para escribirle a <strong>${escapeHtml(trimmedName)}</strong>.
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
+
+            // 4. Enviar correo a la escuela
+            const schoolResult = await resend.emails.send({
+                from: SENDER_ES,
+                to: SCHOOL_RECIPIENT,
+                replyTo: `${trimmedName} <${trimmedEmail}>`,
+                reply_to: `${trimmedName} <${trimmedEmail}>`,
+                headers: {
+                    "Reply-To": `${trimmedName} <${trimmedEmail}>`
+                },
+                subject: `Consulta Web Ventarrón - ${trimmedName}`,
+                html: schoolHtml
+            });
+
+            if (schoolResult.error) {
+                logger.error("Error al enviar email a la escuela con Resend:", schoolResult.error);
+                return res.status(500).json({
+                    success: false,
+                    error: isEn
+                        ? "Could not send the message at this time."
+                        : "No se pudo procesar el envío del correo en este momento."
+                });
+            }
+
+            logger.info(`Consulta web enviada exitosamente para ${trimmedName} (${trimmedEmail}). ID: ${schoolResult.data?.id}`);
+
+            // 5. Enviar acuse de recibo automático al visitante desde info@escueladetangoventarron.com
+            try {
+                const ackHtml = isEn
+                    ? `
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <meta charset="utf-8">
+                            <style>
+                                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; background-color: #f8fafc; margin: 0; padding: 24px; }
+                                .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; }
+                                .header { background: linear-gradient(135deg, #1a1a1a 0%, #2c3e50 100%); color: #ffffff; padding: 28px; text-align: center; border-bottom: 3px solid #e74c3c; }
+                                .header h1 { margin: 0; font-size: 22px; font-weight: 600; }
+                                .content { padding: 28px; font-size: 15px; line-height: 1.6; color: #334155; }
+                                .box { background: #f8fafc; border-left: 4px solid #e74c3c; padding: 14px 18px; border-radius: 6px; margin: 20px 0; font-size: 14px; white-space: pre-wrap; }
+                                .footer { background: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="container">
+                                <div class="header">
+                                    <h1>Ventarrón Tango School</h1>
+                                    <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.85;">Tango Classes & Milongas in Montevideo</p>
+                                </div>
+                                <div class="content">
+                                    <p>Hello <strong>${escapeHtml(trimmedName)}</strong>,</p>
+                                    <p>We have received your inquiry through our website. Thank you for reaching out to us!</p>
+                                    <p>Our team will review your message and get back to you very soon.</p>
+                                    <div class="box"><strong>Your message:</strong><br><em>"${escapeHtml(trimmedMessage)}"</em></div>
+                                    <p>If you prefer a faster reply via WhatsApp, feel free to write to us at <a href="https://wa.me/59899627941" style="color:#e74c3c; font-weight:600; text-decoration:none;">(+598) 099 627941</a>.</p>
+                                    <p style="text-align: center; font-style: italic; margin-top: 24px;">See you on the dance floor! 💃✨</p>
+                                </div>
+                                <div class="footer">
+                                    Escuela de Tango Ventarrón &bull; Durazno 1666, Montevideo, Uruguay<br>
+                                    <a href="https://escueladetangoventarron.com" style="color:#e74c3c; text-decoration:none;">escueladetangoventarron.com</a>
+                                </div>
+                            </div>
+                        </body>
+                        </html>
+                    `
+                    : `
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <meta charset="utf-8">
+                            <style>
+                                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; background-color: #f8fafc; margin: 0; padding: 24px; }
+                                .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; }
+                                .header { background: linear-gradient(135deg, #1a1a1a 0%, #2c3e50 100%); color: #ffffff; padding: 28px; text-align: center; border-bottom: 3px solid #e74c3c; }
+                                .header h1 { margin: 0; font-size: 22px; font-weight: 600; }
+                                .content { padding: 28px; font-size: 15px; line-height: 1.6; color: #334155; }
+                                .box { background: #f8fafc; border-left: 4px solid #e74c3c; padding: 14px 18px; border-radius: 6px; margin: 20px 0; font-size: 14px; white-space: pre-wrap; }
+                                .footer { background: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="container">
+                                <div class="header">
+                                    <h1>Escuela de Tango Ventarrón</h1>
+                                    <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.85;">Clases de Tango y Milongas en Montevideo</p>
+                                </div>
+                                <div class="content">
+                                    <p>Hola <strong>${escapeHtml(trimmedName)}</strong>,</p>
+                                    <p>Hemos recibido tu consulta a través de nuestro sitio web. ¡Muchas gracias por escribirnos!</p>
+                                    <p>Te responderemos a la brevedad.</p>
+                                    <div class="box"><strong>Resumen de tu mensaje:</strong><br><em>"${escapeHtml(trimmedMessage)}"</em></div>
+                                    <p>Si deseas comunicarte de forma inmediata por WhatsApp, puedes escribirnos al <a href="https://wa.me/59899627941" style="color:#e74c3c; font-weight:600; text-decoration:none;">(+598) 099 627941</a>.</p>
+                                    <p style="text-align: center; font-style: italic; margin-top: 24px;">¡Nos vemos en pista! 💃✨</p>
+                                </div>
+                                <div class="footer">
+                                    Escuela de Tango Ventarrón &bull; Durazno 1666, Montevideo, Uruguay<br>
+                                    <a href="https://escueladetangoventarron.com" style="color:#e74c3c; text-decoration:none;">escueladetangoventarron.com</a>
+                                </div>
+                            </div>
+                        </body>
+                        </html>
+                    `;
+
+                const senderHeader = isEn ? SENDER_EN : SENDER_ES;
+                await resend.emails.send({
+                    from: senderHeader,
+                    to: trimmedEmail,
+                    replyTo: senderHeader,
+                    reply_to: senderHeader,
+                    headers: {
+                        "Reply-To": senderHeader
+                    },
+                    subject: isEn
+                        ? "We have received your inquiry - Ventarrón Tango School"
+                        : "Hemos recibido tu consulta - Escuela de Tango Ventarrón",
+                    html: ackHtml
+                });
+            } catch (ackError) {
+                logger.warn("No se pudo enviar el correo de confirmación al visitante:", ackError);
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: isEn
+                    ? "Message sent successfully! We will get back to you soon."
+                    : "¡Mensaje enviado con éxito! Te responderemos pronto."
+            });
+        } catch (err) {
+            logger.error("Error inesperado en contactForm:", err);
+            return res.status(500).json({
+                success: false,
+                error: "Ocurrió un error inesperado al procesar tu solicitud."
+            });
+        }
+    }
+);
