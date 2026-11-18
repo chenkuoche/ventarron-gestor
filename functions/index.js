@@ -764,6 +764,52 @@ function escapeHtml(text) {
 }
 
 /**
+ * Filtro heurístico de firmas de spam conocidas usadas por redes de bots
+ */
+function isKnownSpam(name, email, message) {
+    const combined = `${name} ${message}`.toLowerCase();
+
+    // 1. Plantilla recurrente de bots que anexan el título o H1 del sitio
+    if (/por favor,?\s*cont[aá]ctenme por correo electr[oó]nico/i.test(combined)) return true;
+    if (/—\s*clases de tango en montevideo/i.test(combined)) return true;
+    if (/clases de tango en montevideo/i.test(message) && message.trim().length < 130 && /cont[aá]ct/i.test(message)) return true;
+
+    // 2. Mensajes basura en otros idiomas no pertinentes (ej. bot vasco/euskera)
+    if (/kaixo,?\s*zure\s*prezioa/i.test(combined)) return true;
+    if (/zure\s*prezioa\s*jakin/i.test(combined)) return true;
+
+    // 3. Spam típico de SEO, cripto o enlaces promocionales no deseados
+    if (/(?:seo|backlink|guest post|ranking|crypto|bitcoin|forex)/i.test(combined)) return true;
+    if (/(?:https?:\/\/|www\.)\S+/i.test(message) && !/(?:instagram|facebook|wa\.me)/i.test(message)) return true;
+
+    return false;
+}
+
+// Registro en memoria de solicitudes por IP para limitar abusos (Rate Limiting)
+const ipRateLimitMap = new Map();
+function isRateLimited(ip) {
+    if (!ip) return false;
+    const now = Date.now();
+    const windowMs = 15 * 60 * 1000; // Ventana de 15 minutos
+    const maxRequests = 4; // Máximo 4 envíos cada 15 minutos
+
+    const timestamps = (ipRateLimitMap.get(ip) || []).filter(t => (now - t) < windowMs);
+    timestamps.push(now);
+    ipRateLimitMap.set(ip, timestamps);
+
+    // Limpieza preventiva si el mapa crece
+    if (ipRateLimitMap.size > 500) {
+        for (const [key, times] of ipRateLimitMap.entries()) {
+            if (times.every(t => (now - t) >= windowMs)) {
+                ipRateLimitMap.delete(key);
+            }
+        }
+    }
+
+    return timestamps.length > maxRequests;
+}
+
+/**
  * Valida opcionalmente el token de reCAPTCHA v3 si RECAPTCHA_SECRET_KEY está configurada
  */
 async function verifyRecaptcha(token, remoteIp) {
@@ -818,11 +864,47 @@ exports.contactForm = onRequest(
         }
 
         try {
-            const { name, email, message, lang, recaptchaToken } = req.body || {};
+            const { name, email, message, lang, recaptchaToken, company, duration } = req.body || {};
             const isEn = lang === "en";
-
-            // 1. Verificación opcional de reCAPTCHA v3
             const clientIp = req.ip || req.headers["x-forwarded-for"] || "";
+
+            // Mensaje de éxito estándar para respuestas silenciosas a bots
+            const genericSuccessMsg = isEn
+                ? "Message sent successfully! We will get back to you soon."
+                : "¡Mensaje enviado con éxito! Te responderemos pronto.";
+
+            // 1. CAPA 1: Trampa invisible (Honeypot)
+            // Si el campo oculto "company" contiene texto, es indudablemente un bot.
+            if (typeof company === "string" && company.trim().length > 0) {
+                logger.warn("Bot bloqueado por trampa Honeypot:", { ip: clientIp, name, email, company });
+                return res.status(200).json({ success: true, message: genericSuccessMsg });
+            }
+
+            // 2. CAPA 2: Control de tiempo de llenado (Time-to-submit)
+            // Un humano tarda al menos 2.5 segundos en escribir nombre, correo y mensaje.
+            // Si duration viene reportada y es menor a 2.5s, o es un valor anómalo, se descarta silenciosamente.
+            if (typeof duration === "number" && duration < 2.5) {
+                logger.warn("Bot bloqueado por tiempo de envío instantáneo (< 2.5s):", { ip: clientIp, duration, name, email });
+                return res.status(200).json({ success: true, message: genericSuccessMsg });
+            }
+
+            // 3. CAPA 3: Detección heurística de firmas y textos de spambots
+            const trimmedName = typeof name === "string" ? name.trim() : "";
+            const trimmedEmail = typeof email === "string" ? email.trim() : "";
+            const trimmedMessage = typeof message === "string" ? message.trim() : "";
+
+            if (isKnownSpam(trimmedName, trimmedEmail, trimmedMessage)) {
+                logger.warn("Bot bloqueado por firma de spam conocida:", { ip: clientIp, name: trimmedName, email: trimmedEmail, message: trimmedMessage });
+                return res.status(200).json({ success: true, message: genericSuccessMsg });
+            }
+
+            // 4. CAPA 4: Límite de tasa por IP (Rate Limiting)
+            if (isRateLimited(clientIp)) {
+                logger.warn("Envío bloqueado por exceso de solicitudes desde la misma IP (Rate Limit):", { ip: clientIp });
+                return res.status(200).json({ success: true, message: genericSuccessMsg });
+            }
+
+            // 5. CAPA 5: Verificación de reCAPTCHA v3 si está configurado
             const recaptchaResult = await verifyRecaptcha(recaptchaToken, clientIp);
             if (!recaptchaResult.success || (typeof recaptchaResult.score === "number" && recaptchaResult.score < 0.5)) {
                 logger.warn("Envío bloqueado por reCAPTCHA v3:", recaptchaResult);
@@ -834,11 +916,7 @@ exports.contactForm = onRequest(
                 });
             }
 
-            // 2. Validaciones básicas
-            const trimmedName = typeof name === "string" ? name.trim() : "";
-            const trimmedEmail = typeof email === "string" ? email.trim() : "";
-            const trimmedMessage = typeof message === "string" ? message.trim() : "";
-
+            // 6. Validaciones básicas de campos
             if (!trimmedName || !trimmedEmail || !trimmedMessage) {
                 return res.status(400).json({
                     success: false,
@@ -872,7 +950,7 @@ exports.contactForm = onRequest(
             const SENDER_EN = "Ventarrón Tango School <info@escueladetangoventarron.com>";
             const SCHOOL_RECIPIENT = "escueladetangoventarron@gmail.com";
 
-            // 3. Plantilla HTML de notificación para la escuela
+            // 7. Plantilla HTML de notificación para la escuela
             const schoolHtml = `
                 <!DOCTYPE html>
                 <html>
@@ -922,7 +1000,7 @@ exports.contactForm = onRequest(
                 </html>
             `;
 
-            // 4. Enviar correo a la escuela
+            // 8. Enviar correo a la escuela
             const schoolResult = await resend.emails.send({
                 from: SENDER_ES,
                 to: SCHOOL_RECIPIENT,
@@ -947,7 +1025,7 @@ exports.contactForm = onRequest(
 
             logger.info(`Consulta web enviada exitosamente para ${trimmedName} (${trimmedEmail}). ID: ${schoolResult.data?.id}`);
 
-            // 5. Enviar acuse de recibo automático al visitante desde info@escueladetangoventarron.com
+            // 9. Enviar acuse de recibo al visitante
             try {
                 const ackHtml = isEn
                     ? `
@@ -1045,9 +1123,7 @@ exports.contactForm = onRequest(
 
             return res.status(200).json({
                 success: true,
-                message: isEn
-                    ? "Message sent successfully! We will get back to you soon."
-                    : "¡Mensaje enviado con éxito! Te responderemos pronto."
+                message: genericSuccessMsg
             });
         } catch (err) {
             logger.error("Error inesperado en contactForm:", err);
